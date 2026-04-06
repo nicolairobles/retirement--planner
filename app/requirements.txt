@@ -1,0 +1,4 @@
+streamlit>=1.30
+altair>=5.0
+pandas>=2.0
+streamlit-local-storage>=1.0
