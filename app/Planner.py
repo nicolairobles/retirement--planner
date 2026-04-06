@@ -41,6 +41,7 @@ from helpers.seeds import PERSONA_AGES, build_seedcase_from_inputs, load_demo_ca
 from helpers.theme import apply_altair_theme, inject_css  # noqa: E402
 from helpers.widgets import money_input, percent_slider  # noqa: E402
 from model.outputs import run_and_extract  # noqa: E402
+from model.tax import STATE_TAX_PRESETS  # noqa: E402
 
 # ---------- Page config ----------
 
@@ -471,7 +472,6 @@ with st.sidebar.expander("Returns & Inflation"):
     )
 
 with st.sidebar.expander("Tax filing"):
-    from model.tax import STATE_TAX_PRESETS
     filing = st.radio(
         "Filing status",
         options=["Single", "Married filing jointly"],
