@@ -279,48 +279,49 @@ with st.sidebar.expander("Personal", expanded=True):
         ),
     )
     def _run_target_finder():
-        """on_click callback — runs BEFORE the script body on the next rerun,
-        so setting widget keys (like 'retirement_target') is allowed."""
+        """on_click callback — runs BEFORE the script body on the next rerun.
+        Finds the earliest safe retirement by checking BOTH deterministic
+        survival and historical Monte Carlo success."""
         result = find_safe_target(
             st.session_state.inputs, st.session_state.current_age,
         )
         if result.found:
             st.session_state.inputs["in_RetirementTarget"] = result.target
             st.session_state["retirement_target"] = float(result.target)
-            st.session_state["_target_finder_result"] = {
-                "target": result.target,
-                "rate": result.success_rate,
-                "age": result.retirement_age,
-                "note": result.note,
-            }
-        else:
-            st.session_state["_target_finder_result"] = {
-                "found": False, "note": result.note,
-            }
+        st.session_state["_target_finder_result"] = {
+            "found": result.found,
+            "target": result.target,
+            "age": result.retirement_age,
+            "mc_rate": result.mc_success_rate,
+            "det_survives": result.det_survives,
+            "note": result.note,
+        }
 
     st.button(
-        "Find my safe target",
+        "Find my earliest safe retirement",
         use_container_width=True,
         on_click=_run_target_finder,
         help=(
-            "Finds the smallest savings target that would have survived 95%+ of "
-            "all historical market conditions (1928-2024). Takes a few seconds."
+            "Finds the earliest age you can retire where your money lasts "
+            "to end-of-plan. Checks both your specific plan (healthcare, "
+            "LTC, taxes) AND 95%+ of historical market conditions."
         ),
     )
 
-    # Show persistent result from last finder run (clears if target was manually changed)
+    # Show persistent result
     _tfr = st.session_state.get("_target_finder_result")
-    if _tfr and _tfr.get("target"):
+    if _tfr and _tfr.get("found") and _tfr.get("target"):
         if inputs["in_RetirementTarget"] == _tfr["target"]:
             st.success(
-                f"Safe target: **${_tfr['target']/1_000_000:.2f}M** "
-                f"({_tfr['rate']:.0%} historical success, retire age {_tfr['age']})"
+                f"Earliest safe retirement: **age {_tfr['age']}** "
+                f"(target ${_tfr['target']/1_000_000:.2f}M, "
+                f"{_tfr['mc_rate']:.0%} historical success, "
+                f"portfolio lasts to end of plan)"
             )
         else:
-            # User changed the target manually; clear stale result
             del st.session_state["_target_finder_result"]
-    elif _tfr and _tfr.get("found") is False:
-        st.warning(f"No safe target found. {_tfr.get('note', '')}")
+    elif _tfr and not _tfr.get("found"):
+        st.warning(f"{_tfr.get('note', 'No safe retirement found in search range.')}")
 
     # Show Bengen multiplier relative to current spending
     _annual_spend_now = (
