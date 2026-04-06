@@ -65,7 +65,7 @@ st.markdown(
     """
 - **All retirement income treated as ordinary income** for tax. Reality has
   LTCG differential and 0/50/85% SS taxability rules.
-- **No required minimum distributions (RMDs)** at age 73 (would force taxable 401(k) withdrawals).
+- **No RMDs** at age 73 (would force taxable 401k withdrawals).
 - **No state income tax** (add separately if applicable).
 - **Fixed asset-class returns** in the deterministic projection. Monte Carlo
   varies them historically.

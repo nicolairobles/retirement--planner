@@ -40,12 +40,60 @@ _BRACKETS_2025_SINGLE: list[tuple[float, float, float, float]] = [
 ]
 
 
+# 2025 married-filing-jointly brackets (IRS Rev. Proc. 2024-40).
+# Bracket widths are roughly 2x the single-filer widths (with exceptions at top).
+_BRACKETS_2025_MFJ: list[tuple[float, float, float, float]] = [
+    #rate  lower         cum_at_lower   upper
+    (0.10,       0.0,          0.00,    23_850.0),
+    (0.12,  23_850.0,      2_385.00,    96_950.0),
+    (0.22,  96_950.0,     11_157.00,   206_700.0),
+    (0.24, 206_700.0,     35_302.00,   394_600.0),
+    (0.32, 394_600.0,     80_398.00,   501_050.0),
+    (0.35, 501_050.0,    114_462.00,   751_600.0),
+    (0.37, 751_600.0,    202_154.50,  float("inf")),
+]
+
+_MFJ_STD_DEDUCTION_2025 = 30_000.0  # 2025 MFJ standard deduction
+
+
+@dataclass(frozen=True)
+class StateTaxParams:
+    """State income tax, modeled as a flat percentage of federal taxable income.
+
+    This is a simplification — most states have their own brackets, exemptions,
+    and deductions. A flat rate gets within ~1% of the true liability for planning
+    purposes and avoids requiring users to navigate 50 different tax codes.
+    """
+    rate: float = 0.0       # 0.0 = no state tax (TX, FL, WA, NV, etc.)
+    label: str = "None"     # human-readable label for UI display
+
+
+# Common state tax presets for the UI dropdown.
+STATE_TAX_PRESETS: dict[str, float] = {
+    "None (TX, FL, WA, NV, etc.)": 0.0,
+    "Arizona (2.5%)": 0.025,
+    "Colorado (4.4%)": 0.044,
+    "Illinois (4.95%)": 0.0495,
+    "New York (6.85%)": 0.0685,
+    "California (9.3%)": 0.093,
+}
+
+
 @dataclass(frozen=True)
 class TaxParams:
     """Parameters that define a year's tax calculation."""
     std_deduction_base: float = 15_000.0     # 2025 single standard deduction
     bracket_indexation: float = 0.025         # ~2.5% annual bracket growth (IRS CPI indexation)
     base_year: int = 2025
+    filing_status: str = "single"             # "single" or "married_filing_jointly"
+    state: StateTaxParams = None              # None treated as 0% state tax
+
+    def __post_init__(self):
+        if self.state is None:
+            object.__setattr__(self, 'state', StateTaxParams())
+        # Override std deduction base for MFJ
+        if self.filing_status == "married_filing_jointly" and self.std_deduction_base == 15_000.0:
+            object.__setattr__(self, 'std_deduction_base', _MFJ_STD_DEDUCTION_2025)
 
     def indexation_factor(self, year: int) -> float:
         """Multiplier that scales base-year brackets + std deduction to `year`."""
@@ -85,9 +133,15 @@ def tax_on_taxable_income(
     ti = max(0.0, taxable_income)
     idx = params.indexation_factor(year)
 
+    # Select bracket table based on filing status
+    brackets = (
+        _BRACKETS_2025_MFJ if params.filing_status == "married_filing_jointly"
+        else _BRACKETS_2025_SINGLE
+    )
+
     # Find the bracket `ti` falls in. Use IRS-published cum_at_lower directly
     # rather than re-summing to avoid rounding drift.
-    for rate, lower_base, cum_at_lower_base, upper_base in _BRACKETS_2025_SINGLE:
+    for rate, lower_base, cum_at_lower_base, upper_base in brackets:
         upper = upper_base * idx
         if ti <= upper:
             lower = lower_base * idx
@@ -96,6 +150,13 @@ def tax_on_taxable_income(
 
     # Unreachable: last tier has infinite upper bound.
     raise RuntimeError("Tax bracket walk failed to terminate")
+
+
+def state_tax(taxable_income: float, params: StateTaxParams | None = None) -> float:
+    """State income tax — flat rate applied to federal taxable income."""
+    if params is None or params.rate <= 0:
+        return 0.0
+    return max(0.0, taxable_income) * params.rate
 
 
 def gross_up_withdrawal(
@@ -133,10 +194,12 @@ def gross_up_withdrawal(
     std_ded = params.std_deduction(year)
 
     withdrawal = net
-    tax = 0.0
+    fed_tax = 0.0
+    st_tax = 0.0
     for _ in range(passes):
         taxable = max(0.0, withdrawal + other_taxable_income - std_ded)
-        tax = tax_on_taxable_income(taxable, year, params)
-        withdrawal = net + tax
+        fed_tax = tax_on_taxable_income(taxable, year, params)
+        st_tax = state_tax(taxable, params.state)
+        withdrawal = net + fed_tax + st_tax
 
-    return withdrawal, tax
+    return withdrawal, fed_tax + st_tax

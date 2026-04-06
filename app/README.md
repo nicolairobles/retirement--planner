@@ -15,7 +15,7 @@ and one smooth compounding curve. This tool is built differently:
 - **Dollar-exact parity with a spreadsheet it replicates.** The underlying
   Python model matches an Excel workbook down to the cent across 14 baseline
   scenarios and 23 regression seeds. Every cell is traceable.
-- **Tax, Roth, forced retirement withdrawals, healthcare, property — all modeled.** Federal brackets
+- **Tax, Roth, RMDs, healthcare, property — all modeled.** Federal brackets
   (indexed forward), Traditional/Roth 401(k) split, required minimum
   distributions at age 73+, Medicare transition, mortgage amortization,
   property appreciation into net worth.

@@ -13,6 +13,7 @@ from .allocation import AllocationParams
 from .expenses import ExpenseParams, HealthcareParams, LTCParams, PropertyParams
 from .income import DisabilityParams, SSParams
 from .returns import ReturnParams
+from .se_tax import SEIncomeParams
 from .tax import TaxParams
 from .vehicle import VehicleParams
 
@@ -123,6 +124,42 @@ class SalarySchedule:
 
 
 @dataclass(frozen=True)
+class SpouseParams:
+    """Spouse modeling for couples.
+
+    When enabled, the spouse contributes:
+    - A second Social Security benefit (own claim age, own benefit)
+    - A second 401k/Roth balance and contributions
+    - Shared expenses (configurable % reduction after one spouse dies)
+    - Survivor SS: after death_age, surviving spouse takes higher of the two SS benefits
+
+    The spouse's salary and 401k contributions use their own SalarySchedule
+    and starting balances, but share the same expense, property, and allocation params.
+    """
+    enabled: bool = False
+    name: str = "Spouse"
+    current_age: int = 35
+    ss: SSParams = None                # spouse's own SS params
+    salary: SalarySchedule = None      # spouse's own salary
+    starting_k401: float = 0.0         # spouse's Traditional 401k balance
+    starting_roth_401k: float = 0.0    # spouse's Roth 401k balance
+    annual_401k_contrib: float = 0.0   # spouse's annual 401k contribution
+    roth_contribution_pct: float = 0.0 # spouse's Roth share
+    death_age: int | None = None       # age spouse dies (None = lives to end)
+    expense_reduction_at_death: float = 0.30  # reduce expenses 30% after one spouse dies
+
+    def __post_init__(self):
+        if self.ss is None:
+            object.__setattr__(self, 'ss', SSParams())
+        if self.salary is None:
+            object.__setattr__(self, 'salary', SalarySchedule(
+                year1=0, year2=0, year3=0, year4=0, growth_rate=0.03,
+                annual_401k_contrib=self.annual_401k_contrib,
+                roth_contribution_pct=self.roth_contribution_pct,
+            ))
+
+
+@dataclass(frozen=True)
 class SeedCase:
     """All parameters needed to run a projection."""
     # Timing
@@ -151,6 +188,8 @@ class SeedCase:
     roth_conversion: RothConversionParams = field(default_factory=RothConversionParams)
     healthcare: HealthcareParams = field(default_factory=HealthcareParams)
     ltc: LTCParams = field(default_factory=LTCParams)
+    se_income: SEIncomeParams = field(default_factory=SEIncomeParams)
+    spouse: SpouseParams = field(default_factory=SpouseParams)
 
     @property
     def total_starting_portfolio(self) -> float:

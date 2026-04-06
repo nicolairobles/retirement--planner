@@ -32,7 +32,14 @@ from .property import (
     property_outflow,
 )
 from .returns import BucketBalances, blended_return_dollars
-from .tax import tax_on_taxable_income
+from .se_tax import (
+    qbi_deduction,
+    se_deduction,
+    se_income_for_year,
+    se_tax,
+    sep_ira_contribution,
+)
+from .tax import state_tax as compute_state_tax, tax_on_taxable_income
 from .rmd import rmd_amount
 from .vehicle import VehicleParams, vehicle_cost
 from .withdrawal import retirement_withdrawal
@@ -71,6 +78,7 @@ class YearRecord:
     # Tax layer (Track B)
     taxable_income: float = 0.0  # Y
     federal_tax: float = 0.0     # Z
+    state_tax: float = 0.0       # state income tax (flat rate on taxable income)
     # Other income streams (user-configurable)
     other_income_1: float = 0.0
     other_income_2: float = 0.0
@@ -83,14 +91,22 @@ class YearRecord:
     expense_mortgage: float = 0.0       # mortgage P&I
     expense_healthcare: float = 0.0     # healthcare costs
     expense_ltc: float = 0.0            # long-term care
+    # Self-employment
+    se_income: float = 0.0
+    se_tax: float = 0.0
+    sep_ira_contrib: float = 0.0
+    # Spouse
+    spouse_salary: float = 0.0
+    spouse_ss: float = 0.0
+    spouse_k401: float = 0.0
+    spouse_roth_401k: float = 0.0
 
 
-def _salary_for_year(year_idx: int, seed: SeedCase) -> float:
-    """Return salary for projection year index (0-based), mirroring Excel D3:D56.
+def _salary_for_year_schedule(year_idx: int, s, base_year: int = 2025) -> float:
+    """Return salary from a SalarySchedule for projection year index (0-based).
 
     D3-D6 are hardcoded (year1..year4). D7+ grows from D6 by growth_rate.
     """
-    s = seed.salary
     if year_idx == 0:
         return s.year1
     if year_idx == 1:
@@ -99,8 +115,12 @@ def _salary_for_year(year_idx: int, seed: SeedCase) -> float:
         return s.year3
     if year_idx == 3:
         return s.year4
-    # D7+: grows from year4 by growth_rate, compounded
     return s.year4 * (1.0 + s.growth_rate) ** (year_idx - 3)
+
+
+def _salary_for_year(year_idx: int, seed: SeedCase) -> float:
+    """Return salary for projection year index (0-based), mirroring Excel D3:D56."""
+    return _salary_for_year_schedule(year_idx, seed.salary, seed.base_year)
 
 
 def _cash_reserve_target(year: int, seed: SeedCase) -> float:
@@ -179,6 +199,11 @@ def run_projection(seed: SeedCase) -> list[YearRecord]:
     # After access age, k401_running goes to 0 (merged into buckets), but we
     # still need to know how much of `end_balance` is Traditional for RMDs.
     traditional_running = seed.starting_balances.k401
+    # Spouse 401k/Roth running balances
+    sp_k401_running = seed.spouse.starting_k401 if seed.spouse.enabled else 0.0
+    sp_roth_running = seed.spouse.starting_roth_401k if seed.spouse.enabled else 0.0
+    sp_traditional_running = sp_k401_running
+
     # Custom asset running balances (tracked outside the core waterfall)
     custom_balances = [
         seed.custom_asset_1.starting_balance if seed.custom_asset_1.enabled else 0.0,
@@ -219,6 +244,16 @@ def run_projection(seed: SeedCase) -> list[YearRecord]:
         disability = disability_annual_income(year, seed.disability)
         other_1 = other_stream_annual_income(year, seed.other_income_1, seed.base_year)
         other_2 = other_stream_annual_income(year, seed.other_income_2, seed.base_year)
+
+        # ----- Spouse income -----
+        sp = seed.spouse
+        spouse_age = sp.current_age + year_idx if sp.enabled else 0
+        spouse_alive = sp.enabled and (sp.death_age is None or spouse_age < sp.death_age)
+        spouse_ss_raw = ss_annual_income(year, sp.ss) if sp.enabled else 0.0
+        if sp.enabled and not spouse_alive:
+            # Survivor rule: surviving spouse takes higher of the two SS benefits
+            spouse_ss_raw = 0.0
+            ss = max(ss, ss_annual_income(year, sp.ss))
         other_taxable = (
             (other_1 if seed.other_income_1.taxable else 0.0)
             + (other_2 if seed.other_income_2.taxable else 0.0)
@@ -230,6 +265,17 @@ def run_projection(seed: SeedCase) -> list[YearRecord]:
         total_other = other_1 + other_2
 
         # ----- Salary (working) or zero (retired) -----
+        # Spouse salary (if enabled, alive, and working)
+        spouse_salary_yr = 0.0
+        sp_k401_contrib = 0.0
+        sp_trad_contrib = 0.0
+        sp_roth_contrib = 0.0
+        if phase == "Working" and spouse_alive:
+            spouse_salary_yr = _salary_for_year_schedule(year_idx, sp.salary, seed.base_year)
+            sp_k401_contrib = sp.annual_401k_contrib
+            sp_trad_contrib = sp_k401_contrib * (1.0 - sp.roth_contribution_pct)
+            sp_roth_contrib = sp_k401_contrib * sp.roth_contribution_pct
+
         if phase == "Working":
             salary = _salary_for_year(year_idx, seed)
             k401_contrib = seed.salary.annual_401k_contrib  # total (Trad + Roth)
@@ -310,35 +356,48 @@ def run_projection(seed: SeedCase) -> list[YearRecord]:
             annual_rate=prop.mortgage_rate, term_years=prop.mortgage_term_years,
         )
 
-        # ----- Federal tax on working-year salary -----
-        # Tax calc: Traditional contrib is pre-tax (reduces taxable income).
-        # Roth contrib is AFTER-tax (doesn't reduce taxable income).
-        # Roth conversion (if any) adds to taxable income.
+        # ----- Self-employment income (working years only) -----
+        se_inc = se_income_for_year(year, seed.se_income, seed.base_year) if phase == "Working" else 0.0
+        se_tax_yr = se_tax(se_inc, year, seed.base_year) if se_inc > 0 else 0.0
+        se_ded = se_deduction(se_tax_yr)
+        sep_contrib = sep_ira_contribution(se_inc, seed.se_income)
+        qbi_ded = qbi_deduction(se_inc, seed.se_income)
+
+        # ----- Federal tax on working-year salary + SE income -----
         std_ded = seed.tax.std_deduction(year)
-        # Itemize vs standard: use whichever deduction is larger.
-        # Post-TCJA the standard deduction is high enough that mortgage interest
-        # only helps when it exceeds ~$15K (typically early mortgage years on
-        # larger loans).
         effective_deduction = max(std_ded, mtg_interest)
+        # Expense adjustment: reduce expenses after spouse death
+        if sp.enabled and not spouse_alive:
+            expenses = expenses * (1.0 - sp.expense_reduction_at_death)
+
         if phase == "Working":
+            # Combined household income for tax purposes
+            total_salary = salary + spouse_salary_yr
+            total_trad_contrib = trad_contrib + sp_trad_contrib
+            total_k401_contrib = k401_contrib + sp_k401_contrib
             taxable_working = max(
-                salary - trad_contrib + conversion_this_year - effective_deduction, 0.0
+                total_salary + se_inc - total_trad_contrib - se_ded - qbi_ded - sep_contrib
+                + conversion_this_year - effective_deduction, 0.0
             )
             fed_tax_working = tax_on_taxable_income(taxable_working, year, seed.tax)
-            # Net savings = salary - expenses - full 401k contrib (both types) - federal tax
-            # (Both contribs leave the paycheck, only Traditional gets the tax benefit)
-            net_savings = salary - expenses - k401_contrib - fed_tax_working
+            state_tax_working = compute_state_tax(taxable_working, seed.tax.state)
+            net_savings = (
+                total_salary + se_inc - expenses - total_k401_contrib - sep_contrib
+                - fed_tax_working - state_tax_working - se_tax_yr
+            )
         else:
-            # Retirement: still may have Roth conversion, which is taxable
             taxable_working = max(conversion_this_year - effective_deduction, 0.0) if conversion_this_year > 0 else 0.0
             fed_tax_working = tax_on_taxable_income(taxable_working, year, seed.tax) if taxable_working > 0 else 0.0
+            state_tax_working = compute_state_tax(taxable_working, seed.tax.state) if taxable_working > 0 else 0.0
             net_savings = 0.0
 
         # ----- Withdrawal (retirement) -----
+        # Combine primary + spouse SS for total household income
+        total_ss = ss + (spouse_ss_raw if spouse_alive else 0.0)
         if phase == "Retired":
             withdrawal, fed_tax_retired = retirement_withdrawal(
                 spending_target=expenses,
-                ss_income=ss,
+                ss_income=total_ss,
                 disability_income=disability,
                 year=year,
                 start_balance=start_balance,
@@ -364,7 +423,7 @@ def run_projection(seed: SeedCase) -> list[YearRecord]:
             # for now W is all traditional, so fully taxable.)
             # Use effective_deduction (max of std_ded, mortgage interest) already computed above
             taxable_retired = max(
-                withdrawal + ss + disability + other_taxable - effective_deduction, 0.0
+                withdrawal + total_ss + disability + other_taxable - effective_deduction, 0.0
             )
             taxable_income = taxable_retired
             # If RMD forced extra taxable income, recompute tax
@@ -372,10 +431,12 @@ def run_projection(seed: SeedCase) -> list[YearRecord]:
                 federal_tax = tax_on_taxable_income(taxable_retired, year, seed.tax)
             else:
                 federal_tax = fed_tax_retired
+            state_tax_yr = compute_state_tax(taxable_retired, seed.tax.state)
         else:
             withdrawal = 0.0
             taxable_income = taxable_working
             federal_tax = fed_tax_working
+            state_tax_yr = state_tax_working
 
         # ----- Property outflow (M) and Vehicle cost (N) -----
         property_cost_this_year = property_outflow(
@@ -414,17 +475,24 @@ def run_projection(seed: SeedCase) -> list[YearRecord]:
             age, seed.returns.stock_return, seed.returns.bond_return, seed.allocation
         )
         if age < seed.retirement.k401_access_age:
-            # Pre-access: k401_running tracks the in-bucket 401k, mirrors traditional_running
-            k401_running = (k401_running + trad_contrib) * (1.0 + k401_rate)
+            k401_running = (k401_running + trad_contrib + sep_contrib) * (1.0 + k401_rate)
             traditional_running = k401_running
             roth_401k_running = (roth_401k_running + roth_contrib) * (1.0 + k401_rate)
         else:
-            # Post-access: k401_running goes to 0 (merged into regular buckets).
-            # But traditional_running keeps growing to track the Traditional portion
-            # so we can apply RMDs. Roth stays separate (tax-free forever).
             k401_running = 0.0
-            traditional_running = traditional_running * (1.0 + k401_rate)
+            traditional_running = (traditional_running + sep_contrib) * (1.0 + k401_rate)
             roth_401k_running = roth_401k_running * (1.0 + k401_rate)
+
+        # Spouse 401k growth (mirrors primary logic, same rate)
+        if sp.enabled and spouse_alive and phase == "Working":
+            sp_k401_running = (sp_k401_running + sp_trad_contrib) * (1.0 + k401_rate)
+            sp_traditional_running = sp_k401_running
+            sp_roth_running = (sp_roth_running + sp_roth_contrib) * (1.0 + k401_rate)
+        elif sp.enabled:
+            # Spouse retired or deceased: balances still grow, no contributions
+            sp_k401_running = sp_k401_running * (1.0 + k401_rate)
+            sp_traditional_running = sp_k401_running
+            sp_roth_running = sp_roth_running * (1.0 + k401_rate)
 
         # ----- Per-bucket split -----
         cash_target = _cash_reserve_target(year, seed)
@@ -499,12 +567,14 @@ def run_projection(seed: SeedCase) -> list[YearRecord]:
                 shortfall -= take
 
         custom_total = sum(custom_balances)
-        total_nw = end_balance + prop_market_value - mtg_balance + custom_total + roth_401k_running
+        spouse_total = sp_k401_running + sp_roth_running if sp.enabled else 0.0
+        total_nw = end_balance + prop_market_value - mtg_balance + custom_total + roth_401k_running + spouse_total
 
         records.append(YearRecord(
             year=year, age=age, phase=phase,
-            salary=salary, living_expenses=expenses, contrib_401k=k401_contrib,
-            net_savings=net_savings, ss_income=ss, disability_income=disability,
+            salary=salary + spouse_salary_yr, living_expenses=expenses,
+            contrib_401k=k401_contrib + sp_k401_contrib,
+            net_savings=net_savings, ss_income=total_ss, disability_income=disability,
             other_income_1=other_1, other_income_2=other_2,
             start_balance=start_balance, annual_return=annual_return,
             withdrawal=withdrawal,
@@ -514,7 +584,7 @@ def run_projection(seed: SeedCase) -> list[YearRecord]:
             cash=buckets.cash, k401=buckets.k401,
             roth_401k=roth_401k_running, roth_conversion=conversion_this_year,
             property_value=prop_market_value, mortgage_bal=mtg_balance, total_nw=total_nw,
-            taxable_income=taxable_income, federal_tax=federal_tax,
+            taxable_income=taxable_income, federal_tax=federal_tax, state_tax=state_tax_yr,
             custom_asset_1_balance=custom_balances[0],
             custom_asset_2_balance=custom_balances[1],
             custom_asset_3_balance=custom_balances[2],
@@ -522,6 +592,9 @@ def run_projection(seed: SeedCase) -> list[YearRecord]:
             expense_mortgage=exp_breakdown["mortgage"],
             expense_healthcare=exp_breakdown["healthcare"],
             expense_ltc=exp_breakdown["ltc"],
+            se_income=se_inc, se_tax=se_tax_yr, sep_ira_contrib=sep_contrib,
+            spouse_salary=spouse_salary_yr, spouse_ss=spouse_ss_raw if spouse_alive else 0.0,
+            spouse_k401=sp_k401_running, spouse_roth_401k=sp_roth_running,
         ))
 
         prev_buckets = buckets

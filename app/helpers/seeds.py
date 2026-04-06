@@ -20,6 +20,7 @@ from model.allocation import AllocationParams
 from model.expenses import ExpenseParams, PropertyParams
 from model.income import DisabilityParams, SSParams
 from model.expenses import HealthcareParams, LTCParams
+from model.se_tax import SEIncomeParams
 from model.inputs import (
     CashReserveParams,
     CustomAssetBucket,
@@ -28,10 +29,11 @@ from model.inputs import (
     RothConversionParams,
     SalarySchedule,
     SeedCase,
+    SpouseParams,
     StartingBalances,
 )
 from model.returns import ReturnParams
-from model.tax import TaxParams
+from model.tax import StateTaxParams, TaxParams
 from model.vehicle import VehicleParams
 
 DEMO_CASES_PATH = APP_ROOT / "helpers" / "demo_cases.json"
@@ -127,6 +129,11 @@ def build_seedcase_from_inputs(inputs: dict, current_age: int = 35) -> SeedCase:
             std_deduction_base=float(inputs.get("in_StdDeduction", 15000)),
             bracket_indexation=float(inputs.get("in_BracketIndexation", 0.025)),
             base_year=BASE_YEAR,
+            filing_status=inputs.get("in_FilingStatus", "single"),
+            state=StateTaxParams(
+                rate=float(inputs.get("in_StateTaxRate", 0.0)),
+                label=inputs.get("in_StateTaxLabel", "None"),
+            ),
         ),
         retirement=RetirementTriggerParams(
             net_worth_target=float(inputs.get("in_RetirementTarget", 1000000)),
@@ -179,6 +186,55 @@ def build_seedcase_from_inputs(inputs: dict, current_age: int = 35) -> SeedCase:
             start_age=int(inputs.get("in_LTCStartAge", 82)),
             duration_years=int(inputs.get("in_LTCDuration", 3)),
         ),
+        se_income=SEIncomeParams(
+            enabled=inputs.get("in_SEEnabled", "No") == "Yes",
+            annual_net_income=float(inputs.get("in_SEAnnualIncome", 0)),
+            growth_rate=float(inputs.get("in_SEGrowthRate", 0.03)),
+            start_year=int(inputs.get("in_SEStartYear", 2025)),
+            end_year=int(inputs.get("in_SEEndYear", 2060)),
+            sep_ira_pct=float(inputs.get("in_SEPIRAPct", 0.25)),
+            qbi_eligible=inputs.get("in_SEQBIEligible", "Yes") == "Yes",
+        ),
+        spouse=_build_spouse_params(inputs, current_age),
+    )
+
+
+def _build_spouse_params(inputs: dict, current_age: int) -> SpouseParams:
+    """Build SpouseParams from app input keys."""
+    if inputs.get("in_SpouseEnabled", "No") != "Yes":
+        return SpouseParams()
+
+    spouse_age = int(inputs.get("in_SpouseAge", current_age))
+    spouse_ss_age = int(inputs.get("in_SpouseSSAge", 67))
+    spouse_salary = float(inputs.get("in_SpouseSalary", 0))
+
+    return SpouseParams(
+        enabled=True,
+        name=inputs.get("in_SpouseName", "Spouse"),
+        current_age=spouse_age,
+        ss=SSParams(
+            eligible=True,
+            benefit_monthly_today=float(inputs.get("in_SpouseSSBenefit", 2000)),
+            cola=float(inputs.get("in_SSCola", 0.02)),
+            start_age=spouse_ss_age,
+            current_age=spouse_age,
+            base_year=BASE_YEAR,
+        ),
+        salary=SalarySchedule(
+            year1=spouse_salary,
+            year2=spouse_salary,
+            year3=spouse_salary,
+            year4=spouse_salary,
+            growth_rate=float(inputs.get("in_SpouseSalaryGrowth", 0.03)),
+            annual_401k_contrib=float(inputs.get("in_Spouse401kContrib", 0)),
+            roth_contribution_pct=float(inputs.get("in_SpouseRothPct", 0.0)),
+        ),
+        starting_k401=float(inputs.get("in_Spouse401kStart", 0)),
+        starting_roth_401k=float(inputs.get("in_SpouseRoth401kStart", 0)),
+        annual_401k_contrib=float(inputs.get("in_Spouse401kContrib", 0)),
+        roth_contribution_pct=float(inputs.get("in_SpouseRothPct", 0.0)),
+        death_age=int(inputs["in_SpouseDeathAge"]) if inputs.get("in_SpouseDeathAge") else None,
+        expense_reduction_at_death=float(inputs.get("in_SpouseExpenseReduction", 0.30)),
     )
 
 

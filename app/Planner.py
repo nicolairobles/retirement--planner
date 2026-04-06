@@ -81,9 +81,8 @@ with st.expander("New here? Read this first (30 seconds)", expanded=False):
 
         **What makes this different from a retirement calculator:**
         - Models **taxes**, **Social Security**, **Roth vs Traditional split**,
-          **forced retirement withdrawals** (RMDs after age 73),
-          **healthcare inflation**, **property** with mortgage payments,
-          and a **shifting stock/bond mix** that gets more conservative as
+          **RMDs**, **healthcare inflation**, **property** with mortgage
+          amortization, and a **glide-path allocation** that shifts bonds as
           you age.
         - **Historical backtest** (not just one deterministic path): runs your
           plan through every start year 1928 to 2024.
@@ -471,6 +470,33 @@ with st.sidebar.expander("Returns & Inflation"):
         min_pct=0.0, max_pct=8.0, step_pct=0.1, key="inflation",
     )
 
+with st.sidebar.expander("Tax filing"):
+    from model.tax import STATE_TAX_PRESETS
+    filing = st.radio(
+        "Filing status",
+        options=["Single", "Married filing jointly"],
+        index=0 if inputs.get("in_FilingStatus", "single") == "single" else 1,
+        key="filing_status",
+        help="Married filing jointly has wider tax brackets and a higher standard deduction.",
+    )
+    inputs["in_FilingStatus"] = "married_filing_jointly" if filing == "Married filing jointly" else "single"
+    preset_label = st.selectbox(
+        "State income tax",
+        options=list(STATE_TAX_PRESETS.keys()) + ["Custom"],
+        index=0,
+        key="state_tax_preset",
+        help="Flat-rate approximation of state income tax. Good enough for planning.",
+    )
+    if preset_label == "Custom":
+        inputs["in_StateTaxRate"] = percent_slider(
+            "Custom state tax rate",
+            inputs.get("in_StateTaxRate", 0.05),
+            min_pct=0.0, max_pct=15.0, step_pct=0.1, key="custom_state_rate",
+        )
+    else:
+        inputs["in_StateTaxRate"] = STATE_TAX_PRESETS[preset_label]
+    inputs["in_StateTaxLabel"] = preset_label
+
 st.sidebar.markdown(
     '<p style="font-size: 0.7rem; font-weight: 600; color: #64748b; '
     'text-transform: uppercase; letter-spacing: 0.05em; margin: 1rem 0 0.25rem 0;">'
@@ -490,6 +516,144 @@ with st.sidebar.expander("Social Security"):
             "Monthly Social Security benefit (today's $)", inputs["in_SSBenefit"],
             max_value=5_000, step=50, key="ss_benefit",
         )
+
+with st.sidebar.expander("Spouse / Partner"):
+    st.caption(
+        "Model a second earner. Adds their salary, Social Security, and 401(k) "
+        "to the household. Make sure to set filing status to 'Married filing "
+        "jointly' above for the correct tax brackets."
+    )
+    spouse_on = st.checkbox(
+        "Include spouse/partner",
+        value=(inputs.get("in_SpouseEnabled", "No") == "Yes"),
+        key="spouse_enabled",
+    )
+    inputs["in_SpouseEnabled"] = "Yes" if spouse_on else "No"
+    if spouse_on:
+        inputs["in_SpouseAge"] = st.number_input(
+            "Spouse's current age", min_value=18, max_value=80,
+            value=int(inputs.get("in_SpouseAge", 35)), step=1, key="spouse_age",
+        )
+        inputs["in_SpouseSalary"] = money_input(
+            "Spouse's annual salary",
+            inputs.get("in_SpouseSalary", 80000),
+            max_value=1_000_000, step=1_000, key="spouse_salary",
+        )
+        inputs["in_SpouseSalaryGrowth"] = percent_slider(
+            "Spouse salary growth",
+            inputs.get("in_SpouseSalaryGrowth", 0.03),
+            min_pct=0.0, max_pct=10.0, step_pct=0.1, key="spouse_sal_growth",
+        )
+        st.markdown("**Spouse's retirement accounts**")
+        inputs["in_Spouse401kStart"] = money_input(
+            "Spouse 401(k) balance",
+            inputs.get("in_Spouse401kStart", 0),
+            max_value=5_000_000, step=5_000, key="spouse_k401_start",
+        )
+        inputs["in_Spouse401kContrib"] = money_input(
+            "Spouse annual 401(k) contribution",
+            inputs.get("in_Spouse401kContrib", 0),
+            max_value=50_000, step=500, key="spouse_k401_contrib",
+        )
+        st.markdown("**Spouse's Social Security**")
+        inputs["in_SpouseSSAge"] = st.number_input(
+            "Spouse's Social Security claim age", min_value=62, max_value=70,
+            value=int(inputs.get("in_SpouseSSAge", 67)), step=1, key="spouse_ss_age",
+        )
+        inputs["in_SpouseSSBenefit"] = money_input(
+            "Spouse monthly Social Security (today's $)",
+            inputs.get("in_SpouseSSBenefit", 2000),
+            max_value=5_000, step=50, key="spouse_ss_benefit",
+        )
+        with st.expander("Survivor scenario (optional)"):
+            st.caption(
+                "If one spouse dies, expenses drop (one fewer person) and the "
+                "surviving spouse takes the higher of the two Social Security benefits."
+            )
+            model_death = st.checkbox(
+                "Model spouse passing away",
+                value=bool(inputs.get("in_SpouseDeathAge")),
+                key="spouse_death_toggle",
+            )
+            if model_death:
+                inputs["in_SpouseDeathAge"] = st.number_input(
+                    "Spouse's age at death",
+                    min_value=int(inputs.get("in_SpouseAge", 35)) + 1,
+                    max_value=100,
+                    value=int(inputs.get("in_SpouseDeathAge", 80)),
+                    step=1, key="spouse_death_age",
+                )
+                inputs["in_SpouseExpenseReduction"] = percent_slider(
+                    "Expense reduction after death",
+                    inputs.get("in_SpouseExpenseReduction", 0.30),
+                    min_pct=0.0, max_pct=50.0, step_pct=5.0, key="spouse_exp_red",
+                    help="How much household expenses drop when one spouse passes. 30% is typical.",
+                )
+            else:
+                inputs.pop("in_SpouseDeathAge", None)
+
+with st.sidebar.expander("Self-employment income"):
+    st.caption(
+        "Side business, freelance, or full-time self-employment. Runs alongside "
+        "your W-2 salary (or replaces it if salary is $0). Includes self-employment "
+        "tax (Social Security + Medicare) and SEP-IRA retirement contributions."
+    )
+    se_on = st.checkbox(
+        "Include self-employment income",
+        value=(inputs.get("in_SEEnabled", "No") == "Yes"),
+        key="se_enabled",
+    )
+    inputs["in_SEEnabled"] = "Yes" if se_on else "No"
+    if se_on:
+        inputs["in_SEAnnualIncome"] = money_input(
+            "Net self-employment income (today's $)",
+            inputs.get("in_SEAnnualIncome", 50000),
+            max_value=1_000_000, step=1_000, key="se_income",
+            help="Your net profit after business expenses, before taxes.",
+        )
+        inputs["in_SEGrowthRate"] = percent_slider(
+            "Annual growth rate",
+            inputs.get("in_SEGrowthRate", 0.03),
+            min_pct=0.0, max_pct=15.0, step_pct=0.5, key="se_growth",
+        )
+        c_sy, c_ey = st.columns(2)
+        inputs["in_SEStartYear"] = c_sy.number_input(
+            "Start year", min_value=2025, max_value=2080,
+            value=int(inputs.get("in_SEStartYear", 2025)), step=1, key="se_start",
+        )
+        inputs["in_SEEndYear"] = c_ey.number_input(
+            "End year", min_value=2025, max_value=2080,
+            value=int(inputs.get("in_SEEndYear", 2060)), step=1, key="se_end",
+        )
+        st.markdown("**SEP-IRA contributions**")
+        st.caption(
+            "A SEP-IRA lets self-employed people save up to 25% of net income "
+            "for retirement (pre-tax, same rules as a Traditional 401k)."
+        )
+        inputs["in_SEPIRAPct"] = percent_slider(
+            "SEP-IRA contribution (%)",
+            inputs.get("in_SEPIRAPct", 0.25),
+            min_pct=0.0, max_pct=25.0, step_pct=1.0, key="sep_pct",
+        )
+        inputs["in_SEQBIEligible"] = "Yes" if st.checkbox(
+            "Eligible for 20% business income deduction",
+            value=(inputs.get("in_SEQBIEligible", "Yes") == "Yes"),
+            key="qbi_elig",
+            help="Most self-employed people qualify for a 20% deduction on qualified "
+                 "business income (QBI). Reduces your taxable income.",
+        ) else "No"
+        # Live preview
+        se_yr1 = float(inputs.get("in_SEAnnualIncome", 0))
+        if se_yr1 > 0:
+            se_tax_yr1 = se_yr1 * 0.153 if se_yr1 <= 168600 else 168600 * 0.153 + (se_yr1 - 168600) * 0.029
+            sep_yr1 = min(se_yr1 * float(inputs.get("in_SEPIRAPct", 0.25)), 69000)
+            st.markdown(
+                f'<div style="background: #f0f9ff; border-left: 3px solid #2563eb; '
+                f'padding: 0.5rem 0.75rem; border-radius: 4px; font-size: 0.85rem; margin: 0.5rem 0;">'
+                f'Year 1: SE tax <strong>${se_tax_yr1:,.0f}</strong>, '
+                f'SEP-IRA <strong>${sep_yr1:,.0f}</strong></div>',
+                unsafe_allow_html=True,
+            )
 
 with st.sidebar.expander("Other Income Streams", expanded=False):
     st.caption("Add custom income like rental, pension, alimony, side business, etc.")
@@ -1382,6 +1546,7 @@ with st.expander("More details — portfolio composition & year-by-year table"):
             "Disability": f"${r.disability_income:,.0f}" if r.disability_income else "—",
             "Other": f"${r.other_income_1 + r.other_income_2:,.0f}" if (r.other_income_1 + r.other_income_2) else "—",
             "Federal Tax": f"${r.federal_tax:,.0f}" if r.federal_tax else "—",
+            "State Tax": f"${r.state_tax:,.0f}" if r.state_tax else "—",
             "Portfolio": f"${r.end_balance:,.0f}",
             "Roth 401(k)": f"${r.roth_401k:,.0f}" if r.roth_401k else "—",
             "Roth Conversion": f"${r.roth_conversion:,.0f}" if r.roth_conversion else "—",

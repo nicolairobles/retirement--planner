@@ -29,6 +29,7 @@ class ProjectionOutputs:
     home_equity_at_end: float = 0.0
     liquid_nw_at_end: float = 0.0   # spendable NW at end (excludes home equity + illiquid custom)
     max_sustainable_spend: float = 0.0   # annual spend in today's $ that plan supports at 0 terminal
+    lifetime_state_tax: float = 0.0
 
     @property
     def retired(self) -> bool:
@@ -67,6 +68,7 @@ def extract_outputs(records: list[YearRecord], seed: SeedCase) -> ProjectionOutp
     final = records[-1]
 
     lifetime_tax = sum(r.federal_tax for r in records)
+    lifetime_state = sum(r.state_tax for r in records)
 
     # Track first age where portfolio hit 0 during retirement
     exhausted_age = None
@@ -83,7 +85,11 @@ def extract_outputs(records: list[YearRecord], seed: SeedCase) -> ProjectionOutp
     selling_cost_pct = seed.prop.selling_cost_pct if seed.prop.buy_property else 0.0
     home_equity_end = raw_equity * (1.0 - selling_cost_pct)
     # Spendable = core portfolio + Roth 401k (tax-free, counts as spendable)
-    liquid_nw_end = final.end_balance + final.roth_401k
+    # Include spouse 401k + Roth as spendable (shared household finances)
+    liquid_nw_end = (
+        final.end_balance + final.roth_401k
+        + final.spouse_k401 + final.spouse_roth_401k
+    )
 
     # Max sustainable annual spend (today's dollars)
     # Computed via binary search: what constant real spending level exactly
@@ -102,6 +108,7 @@ def extract_outputs(records: list[YearRecord], seed: SeedCase) -> ProjectionOutp
         home_equity_at_end=home_equity_end,
         liquid_nw_at_end=liquid_nw_end,
         max_sustainable_spend=max_spend,
+        lifetime_state_tax=lifetime_state,
     )
 
 
