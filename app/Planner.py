@@ -951,7 +951,7 @@ with st.sidebar.expander("Healthcare"):
     st.caption(
         "Monthly costs for health insurance **premiums + expected out-of-pocket** "
         "(deductibles, copays, coinsurance). All numbers in today's dollars; "
-        "inflates ~5%/yr — faster than general prices."
+        "inflates ~4%/yr — faster than general prices."
     )
     hc_on = st.checkbox(
         "Model healthcare costs separately",
@@ -967,7 +967,7 @@ with st.sidebar.expander("Healthcare"):
             f'<div style="background: #fef3c7; padding: 0.5rem 0.75rem; '
             f'border-radius: 4px; font-size: 0.85rem; color: #92400e; margin: 0.25rem 0;">'
             f'Adds <strong>${hc_yr1:,.0f}/yr</strong> (≈${hc_monthly_yr1:,.0f}/mo) in year 1, '
-            f'rising ~5%/yr.</div>',
+            f'rising ~4%/yr.</div>',
             unsafe_allow_html=True,
         )
         st.markdown("**Before age 65 (pre-Medicare)**")
@@ -1496,7 +1496,7 @@ with st.expander("💵 Where does your money go? (expense breakdown)", expanded=
         f"${yr1.expense_healthcare/1_000:.0f}K / yr1" if lifetime_hc else "—",
         delta=f"${lifetime_hc/1_000_000:.1f}M lifetime" if lifetime_hc else None,
         delta_color="off",
-        help="Pre-65 insurance + Medicare + supplements, inflated at healthcare rate (usually 5%).",
+        help="Pre-65 insurance + Medicare + supplements, inflated at healthcare rate (default 4%).",
     )
     col_ltc.metric(
         "Long-term care",

@@ -53,7 +53,7 @@ class HealthcareParams:
     monthly_pre_medicare: float = 1000.0   # $/mo before age 65 (today's dollars)
     monthly_medicare: float = 600.0         # $/mo from age 65+ (today's dollars)
     medicare_age: int = 65
-    healthcare_inflation: float = 0.05      # annual inflation rate (healthcare-specific)
+    healthcare_inflation: float = 0.04      # annual inflation rate (healthcare-specific, BLS avg ~3.5%)
 
 
 @dataclass(frozen=True)

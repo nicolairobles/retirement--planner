@@ -178,7 +178,7 @@ def build_seedcase_from_inputs(inputs: dict, current_age: int = 35) -> SeedCase:
             monthly_pre_medicare=float(inputs.get("in_HealthcarePreMedicare", 1000)),
             monthly_medicare=float(inputs.get("in_HealthcareMedicare", 600)),
             medicare_age=int(inputs.get("in_HealthcareMedicareAge", 65)),
-            healthcare_inflation=float(inputs.get("in_HealthcareInflation", 0.05)),
+            healthcare_inflation=float(inputs.get("in_HealthcareInflation", 0.04)),
         ),
         ltc=LTCParams(
             enabled=inputs.get("in_LTCEnabled", "No") == "Yes",
