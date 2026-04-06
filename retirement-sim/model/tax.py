@@ -19,7 +19,7 @@ Simplifications (matching Track B Moderate scope):
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 # 2025 single-filer brackets, base-year values.
 # Each entry: (marginal rate, lower bound, cumulative tax at lower bound, upper bound).
@@ -86,22 +86,16 @@ class TaxParams:
     bracket_indexation: float = 0.025         # ~2.5% annual bracket growth (IRS CPI indexation)
     base_year: int = 2025
     filing_status: str = "single"             # "single" or "married_filing_jointly"
-    state: StateTaxParams = None              # None treated as 0% state tax
-
-    def __post_init__(self):
-        if self.state is None:
-            object.__setattr__(self, 'state', StateTaxParams())
-        # Override std deduction base for MFJ
-        if self.filing_status == "married_filing_jointly" and self.std_deduction_base == 15_000.0:
-            object.__setattr__(self, 'std_deduction_base', _MFJ_STD_DEDUCTION_2025)
+    state: StateTaxParams = field(default_factory=StateTaxParams)
 
     def indexation_factor(self, year: int) -> float:
         """Multiplier that scales base-year brackets + std deduction to `year`."""
         return (1.0 + self.bracket_indexation) ** (year - self.base_year)
 
     def std_deduction(self, year: int) -> float:
-        """Standard deduction in `year`-dollars."""
-        return self.std_deduction_base * self.indexation_factor(year)
+        """Standard deduction in `year`-dollars. MFJ gets double."""
+        base = _MFJ_STD_DEDUCTION_2025 if self.filing_status == "married_filing_jointly" else self.std_deduction_base
+        return base * self.indexation_factor(year)
 
 
 def tax_on_taxable_income(
