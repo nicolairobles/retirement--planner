@@ -1226,10 +1226,7 @@ st.caption(
     "your spendable portfolio (what you can actually draw from in retirement)."
 )
 
-# --- Plan summary: spend comparison + exhaustion warning ---
-current_annual_spend = (inputs["in_MonthlyNonHousing"] + inputs["in_MonthlyRent"]) * 12
-max_spend = getattr(outputs, "max_sustainable_spend", 0)
-cushion = max_spend - current_annual_spend
+# --- Plan summary: based on portfolio exhaustion, the real bottom line ---
 
 if outputs.retirement_age is None:
     spend_summary = (
@@ -1238,42 +1235,62 @@ if outputs.retirement_age is None:
     )
     spend_color = "#dc2626"
     spend_bg = "#fee2e2"
-elif cushion < 0:
+elif outputs.portfolio_exhausted_age:
+    # Portfolio runs out — this is the real red flag
+    years_lasted = outputs.portfolio_exhausted_age - outputs.retirement_age
+    # Identify what's driving the cost
+    retired_recs = [r for r in records if r.phase == "Retired"]
+    has_hc = any(r.expense_healthcare > 0 for r in retired_recs)
+    has_ltc = any(r.expense_ltc > 0 for r in retired_recs)
+    cost_drivers = []
+    if has_hc:
+        # Find peak healthcare cost
+        peak_hc = max(r.expense_healthcare for r in retired_recs)
+        cost_drivers.append(f"healthcare inflating to ${peak_hc/1_000:.0f}K/yr")
+    if has_ltc:
+        peak_ltc = max(r.expense_ltc for r in retired_recs)
+        cost_drivers.append(f"long-term care adding ${peak_ltc/1_000:.0f}K/yr")
+    driver_text = (" Main cost drivers: " + " and ".join(cost_drivers) + ".") if cost_drivers else ""
     spend_summary = (
-        f"**Your current spending ${current_annual_spend:,.0f}/yr exceeds what the plan can "
-        f"sustain (${max_spend:,.0f}/yr).** Shortfall: ${abs(cushion):,.0f}/yr. Cut expenses, "
-        f"raise savings, or delay retirement."
+        f"**Portfolio runs out at age {outputs.portfolio_exhausted_age}** "
+        f"(lasts {years_lasted} years after retiring at {outputs.retirement_age}). "
+        f"After that, only Social Security covers expenses.{driver_text} "
+        f"Consider: delaying retirement, increasing savings, or reducing healthcare/LTC assumptions."
     )
     spend_color = "#dc2626"
     spend_bg = "#fee2e2"
-elif cushion < current_annual_spend * 0.10:
-    spend_summary = (
-        f"**Thin margin:** current spending ${current_annual_spend:,.0f}/yr, plan supports "
-        f"${max_spend:,.0f}/yr. Cushion: **${cushion:,.0f}/yr** ({cushion/current_annual_spend*100:.0f}%)."
-    )
-    spend_color = "#d97706"
-    spend_bg = "#fef3c7"
 else:
-    spend_summary = (
-        f"**Comfortable cushion:** current spending ${current_annual_spend:,.0f}/yr, plan "
-        f"supports ${max_spend:,.0f}/yr. Cushion: **${cushion:,.0f}/yr** "
-        f"({cushion/current_annual_spend*100:.0f}% breathing room)."
-    )
-    spend_color = "#16a34a"
-    spend_bg = "#dcfce7"
+    # Portfolio survives — show the cushion
+    max_spend = getattr(outputs, "max_sustainable_spend", 0)
+    base_annual = (inputs["in_MonthlyNonHousing"] + inputs["in_MonthlyRent"]) * 12
+    if max_spend > 0 and base_annual > 0:
+        cushion_pct = (max_spend - base_annual) / base_annual * 100
+        if cushion_pct < 10:
+            spend_summary = (
+                f"**Thin margin:** your plan supports ${max_spend:,.0f}/yr in base spending "
+                f"(your current: ${base_annual:,.0f}/yr). "
+                f"Cushion: {cushion_pct:.0f}%. Small changes could tip the balance."
+            )
+            spend_color = "#d97706"
+            spend_bg = "#fef3c7"
+        else:
+            spend_summary = (
+                f"**Portfolio survives to end of plan.** "
+                f"Base spending: ${base_annual:,.0f}/yr, plan supports up to "
+                f"${max_spend:,.0f}/yr ({cushion_pct:.0f}% cushion)."
+            )
+            spend_color = "#16a34a"
+            spend_bg = "#dcfce7"
+    else:
+        spend_summary = "**Portfolio survives to end of plan.**"
+        spend_color = "#16a34a"
+        spend_bg = "#dcfce7"
 
 st.markdown(
     f'<div style="background: {spend_bg}; border-left: 3px solid {spend_color}; '
     f'padding: 0.75rem 1rem; border-radius: 4px; margin: 0.5rem 0 1rem 0;">{spend_summary}</div>',
     unsafe_allow_html=True,
 )
-
-if outputs.portfolio_exhausted_age:
-    st.warning(
-        f"**Spendable portfolio runs out at age {outputs.portfolio_exhausted_age}.** "
-        f"After that, expenses are covered by Social Security, disability, and liquid custom "
-        f"assets only. Home equity (${outputs.home_equity_at_end:,.0f}) stays locked unless sold."
-    )
 
 # --- Top levers: actionable recommendations ---
 @st.cache_data(show_spinner=False)

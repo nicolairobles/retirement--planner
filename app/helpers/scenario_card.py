@@ -65,35 +65,21 @@ def render_scenario_card_v2(outputs, scenario_name: str, current_age: int) -> No
         help="Spendable portfolio at end-of-plan. Excludes home value "
              "and assets that are hard to sell quickly.",
     )
-    # Spend cushion — the single most actionable number
-    inputs = st.session_state.get("inputs", {})
-    current_annual = (
-        float(inputs.get("in_MonthlyNonHousing", 0))
-        + float(inputs.get("in_MonthlyRent", 0))
-    ) * 12
-    if max_spend > 0 and current_annual > 0:
-        cushion_pct = (max_spend - current_annual) / current_annual * 100
-        if cushion_pct >= 10:
-            col4.metric(
-                "Spend cushion", f"+{cushion_pct:.0f}%",
-                help="How much more you could spend beyond your current level. "
-                     "Above 10% is comfortable; below 0% means the plan can't "
-                     "sustain your current spending.",
-            )
-        elif cushion_pct >= 0:
-            col4.metric(
-                "Spend cushion", f"+{cushion_pct:.0f}%",
-                help="Thin margin. Small changes in spending or returns could "
-                     "tip this into a shortfall.",
-            )
-        else:
-            col4.metric(
-                "Spend cushion", f"{cushion_pct:.0f}%",
-                help="Your current spending exceeds what the plan can sustain. "
-                     "Cut spending, save more, or delay retirement.",
-            )
+    # Portfolio outcome — does the money last?
+    exhausted_age = getattr(outputs, 'portfolio_exhausted_age', None)
+    if exhausted_age:
+        col4.metric(
+            "Runs out at", f"Age {exhausted_age}",
+            help="Your spendable portfolio hits $0 at this age. After that, "
+                 "only Social Security and other income cover expenses.",
+        )
+    elif outputs.retirement_age:
+        col4.metric(
+            "Outcome", "Survives",
+            help="Your portfolio lasts to end-of-plan without running out.",
+        )
     else:
-        col4.metric("Spend cushion", "—")
+        col4.metric("Outcome", "—")
 
 
 def _compute_modified(current_inputs: dict, persona_id: str) -> tuple[bool, int]:
