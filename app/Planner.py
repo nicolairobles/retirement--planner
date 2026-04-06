@@ -81,8 +81,9 @@ with st.expander("New here? Read this first (30 seconds)", expanded=False):
 
         **What makes this different from a retirement calculator:**
         - Models **taxes**, **Social Security**, **Roth vs Traditional split**,
-          **RMDs**, **healthcare inflation**, **property** with mortgage
-          amortization, and a **glide-path allocation** that shifts bonds as
+          **forced retirement withdrawals** (RMDs after age 73),
+          **healthcare inflation**, **property** with mortgage payments,
+          and a **shifting stock/bond mix** that gets more conservative as
           you age.
         - **Historical backtest** (not just one deterministic path): runs your
           plan through every start year 1928 to 2024.
