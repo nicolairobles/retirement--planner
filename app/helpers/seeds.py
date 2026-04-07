@@ -17,6 +17,7 @@ REPO_ROOT = APP_ROOT.parent
 sys.path.insert(0, str(REPO_ROOT / "retirement-sim"))
 
 from model.allocation import AllocationParams
+from model.debt import DebtParams
 from model.expenses import ExpenseParams, PropertyParams
 from model.income import DisabilityParams, SSParams
 from model.expenses import HealthcareParams, LTCParams
@@ -167,6 +168,11 @@ def build_seedcase_from_inputs(inputs: dict, current_age: int = 35) -> SeedCase:
         custom_asset_1=_custom_asset_from_inputs(inputs, 1),
         custom_asset_2=_custom_asset_from_inputs(inputs, 2),
         custom_asset_3=_custom_asset_from_inputs(inputs, 3),
+        debt_1=_debt_from_inputs(inputs, 1),
+        debt_2=_debt_from_inputs(inputs, 2),
+        debt_3=_debt_from_inputs(inputs, 3),
+        debt_payoff_strategy=inputs.get("in_DebtPayoffStrategy", "none"),
+        debt_extra_monthly_budget=float(inputs.get("in_DebtExtraBudget", 0)),
         roth_conversion=RothConversionParams(
             enabled=inputs.get("in_RothConvEnabled", "No") == "Yes",
             amount_per_year=float(inputs.get("in_RothConvAmount", 0)),
@@ -285,6 +291,19 @@ def _custom_asset_from_inputs(inputs: dict, n: int) -> CustomAssetBucket:
         return_rate=float(inputs.get(f"in_Custom{n}Return", 0.05)),
         liquid=inputs.get(f"in_Custom{n}Liquid", "Yes") == "Yes",
         draw_priority=int(inputs.get(f"in_Custom{n}DrawPriority", 2)),
+    )
+
+
+def _debt_from_inputs(inputs: dict, n: int) -> DebtParams:
+    """Extract a DebtParams from app input keys."""
+    return DebtParams(
+        enabled=inputs.get(f"in_Debt{n}Enabled", "No") == "Yes",
+        label=inputs.get(f"in_Debt{n}Label", f"Debt {n}"),
+        category=inputs.get(f"in_Debt{n}Category", "Other"),
+        current_balance=float(inputs.get(f"in_Debt{n}Balance", 0)),
+        interest_rate=float(inputs.get(f"in_Debt{n}Rate", 0)),
+        minimum_payment=float(inputs.get(f"in_Debt{n}MinPayment", 0)),
+        extra_monthly_payment=float(inputs.get(f"in_Debt{n}ExtraPayment", 0)),
     )
 
 

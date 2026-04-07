@@ -86,9 +86,11 @@ def extract_outputs(records: list[YearRecord], seed: SeedCase) -> ProjectionOutp
     home_equity_end = raw_equity * (1.0 - selling_cost_pct)
     # Spendable = core portfolio + Roth 401k (tax-free, counts as spendable)
     # Include spouse 401k + Roth as spendable (shared household finances)
+    # Subtract any remaining debt balances (obligations reduce spendable wealth)
     liquid_nw_end = (
         final.end_balance + final.roth_401k
         + final.spouse_k401 + final.spouse_roth_401k
+        - final.total_debt_balance
     )
 
     # Max sustainable annual spend (today's dollars)

@@ -136,6 +136,24 @@ def generate_recommendations(
             "invest",
         ))
 
+    # --- Pay off debt faster (if any debt enabled) ---
+    has_debt = any(
+        inputs.get(f"in_Debt{n}Enabled") == "Yes"
+        and float(inputs.get(f"in_Debt{n}Balance", 0)) > 0
+        for n in (1, 2, 3)
+    )
+    if has_debt:
+        # Test avalanche strategy with $200/mo extra budget
+        current_strategy = inputs.get("in_DebtPayoffStrategy", "none")
+        current_budget = float(inputs.get("in_DebtExtraBudget", 0))
+        if current_strategy == "none" or current_budget < 200:
+            new_budget = max(current_budget + 200, 200)
+            candidates.append((
+                {**inputs, "in_DebtPayoffStrategy": "avalanche", "in_DebtExtraBudget": new_budget},
+                f"Throw ${new_budget:,.0f}/mo extra at debt (avalanche strategy)",
+                "spend",
+            ))
+
     # --- Run each candidate and score ---
     recs: list[Recommendation] = []
     for edit, action_text, category in candidates:

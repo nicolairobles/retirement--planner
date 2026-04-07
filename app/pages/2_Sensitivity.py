@@ -102,6 +102,16 @@ INPUTS_TO_VARY = [
     ("in_InvestStart", 0.50), ("in_SSBenefit", 0.20), ("in_EndAge", 0.11),
 ]
 
+# Dynamically add debt inputs when debts are enabled
+for _n in (1, 2, 3):
+    if inputs.get(f"in_Debt{_n}Enabled") == "Yes":
+        _bal = float(inputs.get(f"in_Debt{_n}Balance", 0))
+        _rate = float(inputs.get(f"in_Debt{_n}Rate", 0))
+        if _bal > 0:
+            INPUTS_TO_VARY.append((f"in_Debt{_n}Balance", 0.50))
+        if _rate > 0:
+            INPUTS_TO_VARY.append((f"in_Debt{_n}Rate", 0.50))
+
 # Human-readable labels for each input (no jargon, no code-variable names)
 INPUT_LABELS = {
     "in_StockReturn": "Stock return",
@@ -132,6 +142,12 @@ INPUT_LABELS = {
     "in_PropertyAppreciation": "Property appreciation rate",
     "in_MortgageRate": "Mortgage rate",
 }
+
+# Add debt labels dynamically using user-provided labels
+for _n in (1, 2, 3):
+    _lbl = inputs.get(f"in_Debt{_n}Label", f"Debt {_n}")
+    INPUT_LABELS[f"in_Debt{_n}Balance"] = f"{_lbl} balance"
+    INPUT_LABELS[f"in_Debt{_n}Rate"] = f"{_lbl} interest rate"
 
 
 def pretty_label(key: str) -> str:

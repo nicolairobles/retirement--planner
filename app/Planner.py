@@ -24,6 +24,7 @@ sys.path.insert(0, str(APP_ROOT))
 from helpers.cache_keys import inputs_cache_key  # noqa: E402
 from helpers.charts import (  # noqa: E402
     bucket_breakdown_chart,
+    debt_payoff_chart,
     income_vs_expenses_chart,
     projection_chart,
 )
@@ -40,6 +41,7 @@ from helpers.scenario_card import render_scenario_card_v2  # noqa: E402
 from helpers.seeds import PERSONA_AGES, build_seedcase_from_inputs, load_demo_cases  # noqa: E402
 from helpers.theme import apply_altair_theme, inject_css  # noqa: E402
 from helpers.widgets import money_input, percent_slider  # noqa: E402
+from model.debt import DEBT_CATEGORIES  # noqa: E402
 from model.outputs import run_and_extract  # noqa: E402
 from model.tax import STATE_TAX_PRESETS  # noqa: E402
 
@@ -787,6 +789,83 @@ with st.sidebar.expander("Custom Assets", expanded=False):
                     help="If core portfolio can't cover expenses, liquid custom assets drain in priority order.",
                 )
 
+with st.sidebar.expander("Debts & Loans", expanded=False):
+    st.caption(
+        "Non-mortgage debts that reduce your net worth and require monthly payments. "
+        "Payments are treated as mandatory expenses — they reduce savings while working "
+        "and increase withdrawals in retirement. Student loan interest is tax-deductible "
+        "(up to $2,500/year)."
+    )
+    for n in (1, 2, 3):
+        st.markdown(f"**Debt {n}**")
+        debt_enabled = inputs.get(f"in_Debt{n}Enabled", "No") == "Yes"
+        debt_enabled_new = st.checkbox("Enable", value=debt_enabled, key=f"debt{n}_enabled")
+        inputs[f"in_Debt{n}Enabled"] = "Yes" if debt_enabled_new else "No"
+        if debt_enabled_new:
+            inputs[f"in_Debt{n}Label"] = st.text_input(
+                "Label",
+                value=inputs.get(f"in_Debt{n}Label", f"Debt {n}"),
+                placeholder="e.g., Chase Visa, Honda Civic, Sallie Mae",
+                key=f"debt{n}_label",
+            )
+            cat_list = list(DEBT_CATEGORIES)
+            current_cat = inputs.get(f"in_Debt{n}Category", "Other")
+            cat_idx = cat_list.index(current_cat) if current_cat in cat_list else len(cat_list) - 1
+            inputs[f"in_Debt{n}Category"] = st.selectbox(
+                "Category", options=cat_list, index=cat_idx, key=f"debt{n}_category",
+            )
+            inputs[f"in_Debt{n}Balance"] = money_input(
+                "Current balance", inputs.get(f"in_Debt{n}Balance", 10000),
+                max_value=500_000, step=500, key=f"debt{n}_balance",
+            )
+            inputs[f"in_Debt{n}Rate"] = percent_slider(
+                "Interest rate (APR)",
+                inputs.get(f"in_Debt{n}Rate", 0.07),
+                min_pct=0.0, max_pct=30.0, step_pct=0.1, key=f"debt{n}_rate",
+            )
+            inputs[f"in_Debt{n}MinPayment"] = money_input(
+                "Monthly minimum payment",
+                inputs.get(f"in_Debt{n}MinPayment", 200),
+                max_value=10_000, step=25, key=f"debt{n}_min_payment",
+            )
+            inputs[f"in_Debt{n}ExtraPayment"] = money_input(
+                "Extra monthly payment",
+                inputs.get(f"in_Debt{n}ExtraPayment", 0),
+                max_value=10_000, step=25, key=f"debt{n}_extra_payment",
+                help="Additional payment above the minimum, applied directly to principal.",
+            )
+
+    # Payoff strategy — show when at least one debt is enabled
+    _any_debt = any(inputs.get(f"in_Debt{n}Enabled") == "Yes" for n in (1, 2, 3))
+    if _any_debt:
+        st.markdown("---")
+        st.markdown("**Payoff Strategy**")
+        st.caption(
+            "**Avalanche** attacks the highest-rate debt first (saves the most interest). "
+            "**Snowball** attacks the lowest-balance debt first (fastest emotional wins). "
+            "When one debt is paid off, its payment cascades to the next target."
+        )
+        strategy_options = {"No strategy": "none", "Avalanche (highest rate first)": "avalanche", "Snowball (lowest balance first)": "snowball"}
+        current_strategy = inputs.get("in_DebtPayoffStrategy", "none")
+        current_label = next((k for k, v in strategy_options.items() if v == current_strategy), "No strategy")
+        selected_label = st.selectbox(
+            "Strategy", options=list(strategy_options.keys()),
+            index=list(strategy_options.keys()).index(current_label),
+            key="debt_strategy",
+        )
+        inputs["in_DebtPayoffStrategy"] = strategy_options[selected_label]
+
+        if inputs["in_DebtPayoffStrategy"] != "none":
+            inputs["in_DebtExtraBudget"] = money_input(
+                "Extra monthly budget for debt payoff",
+                inputs.get("in_DebtExtraBudget", 200),
+                max_value=10_000, step=25, key="debt_extra_budget",
+                help="Monthly amount above all minimums, concentrated on the priority target. "
+                     "When that debt pays off, this + its freed-up minimum roll to the next.",
+            )
+        else:
+            inputs["in_DebtExtraBudget"] = 0
+
 st.sidebar.markdown(
     '<p style="font-size: 0.7rem; font-weight: 600; color: #64748b; '
     'text-transform: uppercase; letter-spacing: 0.05em; margin: 1rem 0 0.25rem 0;">'
@@ -1214,7 +1293,12 @@ st.divider()
 import pandas as pd
 
 # Extract life events from the records
-events = extract_events(records, end_age=int(inputs["in_EndAge"]))
+_debt_labels = (
+    inputs.get("in_Debt1Label", "Debt 1"),
+    inputs.get("in_Debt2Label", "Debt 2"),
+    inputs.get("in_Debt3Label", "Debt 3"),
+)
+events = extract_events(records, end_age=int(inputs["in_EndAge"]), debt_labels=_debt_labels)
 events_map = events_by_year(events)
 
 # --- HERO: Year-by-year net worth chart (most important visual, above the fold) ---
@@ -1462,6 +1546,75 @@ if inputs.get("in_BuyProperty", "No") == "Yes":
             )
         st.divider()
 
+# --- Debt summary (only shown when debts are active) ---
+_starting_debt = records[0].total_debt_balance
+if _starting_debt > 0.01 or records[0].expense_debt > 0:
+    with st.expander("Debt overview", expanded=True):
+        # Find payoff year: first year AFTER year 0 where debt reaches 0
+        _payoff_rec = next(
+            (r for r in records[1:] if r.total_debt_balance <= 0.01),
+            None,
+        )
+        _total_payments = sum(r.expense_debt for r in records)
+        _total_interest = max(0.0, _total_payments - _starting_debt)
+
+        dcol1, dcol2, dcol3, dcol4 = st.columns(4)
+        dcol1.metric(
+            "Total debt today",
+            f"${_starting_debt:,.0f}",
+        )
+        if _payoff_rec:
+            dcol2.metric(
+                "Debt-free by",
+                f"{_payoff_rec.year} (age {_payoff_rec.age})",
+            )
+        else:
+            dcol2.metric("Debt-free by", "Not in plan horizon")
+        dcol3.metric(
+            "Total interest paid",
+            f"${_total_interest:,.0f}",
+            help="Estimated total interest cost of carrying this debt until payoff.",
+        )
+        _strategy_label = {
+            "none": "None", "avalanche": "Avalanche", "snowball": "Snowball",
+        }.get(inputs.get("in_DebtPayoffStrategy", "none"), "None")
+        dcol4.metric(
+            "Payoff strategy",
+            _strategy_label,
+            help="Avalanche = highest rate first. Snowball = lowest balance first.",
+        )
+
+        # Per-debt payoff timeline
+        _debt_details = []
+        for _n, _bal_attr in [(1, "debt_1_balance"), (2, "debt_2_balance"), (3, "debt_3_balance")]:
+            if inputs.get(f"in_Debt{_n}Enabled") == "Yes":
+                _start_bal = getattr(records[0], _bal_attr, 0.0)
+                if _start_bal > 0.01:
+                    _payoff_yr = next(
+                        (r for r in records[1:] if getattr(r, _bal_attr, 0.0) <= 0.01),
+                        None,
+                    )
+                    _debt_details.append({
+                        "Debt": inputs.get(f"in_Debt{_n}Label", f"Debt {_n}"),
+                        "Balance": f"${_start_bal:,.0f}",
+                        "APR": f"{float(inputs.get(f'in_Debt{_n}Rate', 0)) * 100:.1f}%",
+                        "Payment/mo": f"${float(inputs.get(f'in_Debt{_n}MinPayment', 0)):,.0f}",
+                        "Paid off": f"{_payoff_yr.year} (age {_payoff_yr.age})" if _payoff_yr else "Not in horizon",
+                    })
+        if _debt_details:
+            st.dataframe(pd.DataFrame(_debt_details), hide_index=True, use_container_width=True)
+
+        # Debt payoff chart
+        _debt_chart = debt_payoff_chart(
+            records,
+            debt_labels=_debt_labels,
+            height=250,
+            base_year=2025,
+            current_age=current_age,
+        )
+        if _debt_chart:
+            st.altair_chart(_debt_chart, use_container_width=True)
+
 # --- Expense breakdown: where is the money going? ---
 # Compute year-1 and lifetime totals for each expense category.
 yr1 = records[0]
@@ -1469,49 +1622,63 @@ lifetime_base = sum(r.expense_base for r in records)
 lifetime_mortgage = sum(r.expense_mortgage for r in records)
 lifetime_hc = sum(r.expense_healthcare for r in records)
 lifetime_ltc = sum(r.expense_ltc for r in records)
-lifetime_total = lifetime_base + lifetime_mortgage + lifetime_hc + lifetime_ltc
+lifetime_debt = sum(r.expense_debt for r in records)
+lifetime_total = lifetime_base + lifetime_mortgage + lifetime_hc + lifetime_ltc + lifetime_debt
 
 with st.expander("💵 Where does your money go? (expense breakdown)", expanded=False):
     st.caption(
         f"Total lifetime expenses over {len(records)} years: **${lifetime_total/1_000_000:.1f}M** (nominal). "
         "Each category inflates at its own rate."
     )
-    col_base, col_mort, col_hc, col_ltc = st.columns(4)
-    col_base.metric(
+    exp_cols = st.columns(5 if lifetime_debt else 4)
+    exp_cols[0].metric(
         "Living expenses",
         f"${yr1.expense_base/1_000:.0f}K / yr1",
         delta=f"${lifetime_base/1_000_000:.1f}M lifetime",
         delta_color="off",
         help="Non-housing + housing/rent, inflated at your general inflation rate.",
     )
-    col_mort.metric(
+    exp_cols[1].metric(
         "Mortgage payment",
         f"${yr1.expense_mortgage/1_000:.0f}K / yr1" if lifetime_mortgage else "—",
         delta=f"${lifetime_mortgage/1_000_000:.1f}M lifetime" if lifetime_mortgage else None,
         delta_color="off",
         help="Your fixed monthly mortgage payment (principal + interest) until the loan is paid off.",
     )
-    col_hc.metric(
+    exp_cols[2].metric(
         "Healthcare",
         f"${yr1.expense_healthcare/1_000:.0f}K / yr1" if lifetime_hc else "—",
         delta=f"${lifetime_hc/1_000_000:.1f}M lifetime" if lifetime_hc else None,
         delta_color="off",
         help="Pre-65 insurance + Medicare + supplements, inflated at healthcare rate (default 4%).",
     )
-    col_ltc.metric(
+    exp_cols[3].metric(
         "Long-term care",
         f"${lifetime_ltc/1_000:.0f}K total" if lifetime_ltc else "—",
         delta=f"${lifetime_ltc/1_000_000:.1f}M lifetime" if lifetime_ltc else None,
         delta_color="off",
         help="Nursing home / assisted living / in-home care during the LTC event window.",
     )
+    if lifetime_debt:
+        exp_cols[4].metric(
+            "Debt payments",
+            f"${yr1.expense_debt/1_000:.0f}K / yr1",
+            delta=f"${lifetime_debt/1_000_000:.1f}M lifetime",
+            delta_color="off",
+            help="Total debt payments (credit cards, student loans, auto loans, etc.). Drops to $0 when debts are paid off.",
+        )
     if lifetime_total > 0:
+        dist_parts = [
+            f"{lifetime_base/lifetime_total*100:.0f}% living",
+            f"{lifetime_mortgage/lifetime_total*100:.0f}% mortgage",
+            f"{lifetime_hc/lifetime_total*100:.0f}% healthcare",
+            f"{lifetime_ltc/lifetime_total*100:.0f}% long-term care",
+        ]
+        if lifetime_debt:
+            dist_parts.append(f"{lifetime_debt/lifetime_total*100:.0f}% debt")
         st.caption(
             f"**Distribution:** "
-            f"{lifetime_base/lifetime_total*100:.0f}% living · "
-            f"{lifetime_mortgage/lifetime_total*100:.0f}% mortgage · "
-            f"{lifetime_hc/lifetime_total*100:.0f}% healthcare · "
-            f"{lifetime_ltc/lifetime_total*100:.0f}% long-term care"
+            + " · ".join(dist_parts)
         )
 
 st.subheader("Retirement income vs expenses")
@@ -1557,6 +1724,7 @@ with st.expander("More details — portfolio composition & year-by-year table"):
             "Expenses": f"${r.living_expenses:,.0f}",
             "  Living": f"${r.expense_base:,.0f}" if r.expense_base else "—",
             "  Mortgage": f"${r.expense_mortgage:,.0f}" if r.expense_mortgage else "—",
+            "  Debt": f"${r.expense_debt:,.0f}" if r.expense_debt else "—",
             "  Healthcare": f"${r.expense_healthcare:,.0f}" if r.expense_healthcare else "—",
             "  Long-term Care": f"${r.expense_ltc:,.0f}" if r.expense_ltc else "—",
             "Withdrawal": f"${r.withdrawal:,.0f}" if r.withdrawal else "—",
@@ -1568,6 +1736,7 @@ with st.expander("More details — portfolio composition & year-by-year table"):
             "Portfolio": f"${r.end_balance:,.0f}",
             "Roth 401(k)": f"${r.roth_401k:,.0f}" if r.roth_401k else "—",
             "Roth Conversion": f"${r.roth_conversion:,.0f}" if r.roth_conversion else "—",
+            "Debt Balance": f"${r.total_debt_balance:,.0f}" if r.total_debt_balance else "—",
             "Net Worth": f"${r.total_nw:,.0f}",
             "_has_event": row_is_key,
         })

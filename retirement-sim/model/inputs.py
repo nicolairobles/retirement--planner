@@ -10,6 +10,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 
 from .allocation import AllocationParams
+from .debt import DebtParams
 from .expenses import ExpenseParams, HealthcareParams, LTCParams, PropertyParams
 from .income import DisabilityParams, SSParams
 from .returns import ReturnParams
@@ -178,6 +179,11 @@ class SeedCase:
     custom_asset_1: CustomAssetBucket = field(default_factory=CustomAssetBucket)
     custom_asset_2: CustomAssetBucket = field(default_factory=CustomAssetBucket)
     custom_asset_3: CustomAssetBucket = field(default_factory=CustomAssetBucket)
+    debt_1: DebtParams = field(default_factory=DebtParams)
+    debt_2: DebtParams = field(default_factory=DebtParams)
+    debt_3: DebtParams = field(default_factory=DebtParams)
+    debt_payoff_strategy: str = "none"       # "none" | "avalanche" | "snowball"
+    debt_extra_monthly_budget: float = 0.0   # extra $/mo to throw at debt (strategy only)
     roth_conversion: RothConversionParams = field(default_factory=RothConversionParams)
     healthcare: HealthcareParams = field(default_factory=HealthcareParams)
     ltc: LTCParams = field(default_factory=LTCParams)

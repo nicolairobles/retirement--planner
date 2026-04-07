@@ -70,11 +70,81 @@ C_MORTGAGE = "#8b5cf6"      # violet-500
 C_HEALTHCARE = "#e11d48"    # rose-600 (distinct from living)
 C_LTC = "#a16207"           # yellow-700 (warm, 50+ deg from rose-600)
 
+# Debt
+C_DEBT_1 = "#ef4444"        # red-500
+C_DEBT_2 = "#f97316"        # orange-500
+C_DEBT_3 = "#eab308"        # yellow-500
+
 # Event annotations
 C_RETIRE_EVENT = "#d97706"  # amber-600
 C_INCOME_EVENT = "#15803d"  # green-700 (matches SS)
 C_OUTFLOW_EVENT = "#dc2626" # red-600
 C_MILESTONE = "#9333ea"     # purple-600
+
+
+def debt_payoff_chart(
+    records: list,
+    debt_labels: tuple[str, str, str] = ("Debt 1", "Debt 2", "Debt 3"),
+    height: int = 280,
+    base_year: int = 2025,
+    current_age: int = 35,
+) -> alt.Chart | None:
+    """Stacked area chart showing debt balances declining to zero over time.
+
+    Returns None if no debt is active (so the caller can skip rendering).
+    """
+    # Only include years where at least one debt has a balance
+    rows = []
+    for r in records:
+        if r.debt_1_balance > 0.01 or r.debt_2_balance > 0.01 or r.debt_3_balance > 0.01:
+            for bal, label, color_idx in [
+                (r.debt_1_balance, debt_labels[0], 0),
+                (r.debt_2_balance, debt_labels[1], 1),
+                (r.debt_3_balance, debt_labels[2], 2),
+            ]:
+                if bal > 0.01:
+                    rows.append({
+                        "year": r.year,
+                        "age": r.age,
+                        "debt": label,
+                        "balance": bal,
+                    })
+
+    if not rows:
+        return None
+
+    df = pd.DataFrame(rows)
+    unique_debts = df["debt"].unique().tolist()
+    colors_map = {debt_labels[0]: C_DEBT_1, debt_labels[1]: C_DEBT_2, debt_labels[2]: C_DEBT_3}
+    domain = [d for d in unique_debts]
+    range_ = [colors_map.get(d, C_DEBT_1) for d in domain]
+
+    label_expr = (
+        f"datum.value + ' (' + (datum.value - {base_year} + {current_age}) + ')'"
+    )
+
+    chart = alt.Chart(df).mark_area(
+        interpolate="monotone",
+        opacity=0.75,
+    ).encode(
+        x=alt.X(
+            "year:Q", title="Year (age)",
+            axis=alt.Axis(format="d", tickCount=10, labelExpr=label_expr),
+        ),
+        y=alt.Y("balance:Q", title="Outstanding balance", axis=alt.Axis(format="$,.0f"), stack="zero"),
+        color=alt.Color(
+            "debt:N",
+            scale=alt.Scale(domain=domain, range=range_),
+            legend=alt.Legend(title=None, orient="bottom"),
+        ),
+        tooltip=[
+            alt.Tooltip("year:Q", title="Year", format="d"),
+            alt.Tooltip("debt:N", title="Debt"),
+            alt.Tooltip("balance:Q", title="Balance", format="$,.0f"),
+        ],
+    ).properties(height=height)
+
+    return chart
 
 
 def projection_chart(
@@ -297,15 +367,17 @@ def income_vs_expenses_chart(
             rows.append({"year": r.year, "category": "Healthcare", "amount": -r.expense_healthcare, "kind": "expense"})
         if r.expense_ltc > 0:
             rows.append({"year": r.year, "category": "Long-term care", "amount": -r.expense_ltc, "kind": "expense"})
+        if r.expense_debt > 0:
+            rows.append({"year": r.year, "category": "Debt payments", "amount": -r.expense_debt, "kind": "expense"})
     df = pd.DataFrame(rows)
 
     domain = [
         "Portfolio withdrawal", "Social Security", "Disability", "Other income",
-        "Living expenses", "Mortgage P&I", "Healthcare", "Long-term care",
+        "Living expenses", "Mortgage P&I", "Healthcare", "Long-term care", "Debt payments",
     ]
     range_ = [
         C_WITHDRAWAL, C_SS, C_DISABILITY, C_OTHER_INCOME,
-        C_LIVING, C_MORTGAGE, C_HEALTHCARE, C_LTC,
+        C_LIVING, C_MORTGAGE, C_HEALTHCARE, C_LTC, C_DEBT_1,
     ]
 
     # Constrain x-axis to actual data range (avoids Altair's wild auto-scaling)

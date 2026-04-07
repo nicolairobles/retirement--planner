@@ -52,8 +52,8 @@
     {
       "id": "jordan-late-start",
       "name": "Jordan — Late Starter",
-      "tagline": "45, high earner, small nest egg. Behind on savings. Wants to know if they can still retire by 67.",
-      "persona_notes": "Age 45. $50K saved. Earns $140K/year. Catching up with max 401(k) + taxable savings. Willing to work longer.",
+      "tagline": "45, high earner, small nest egg. Behind on savings. Carrying debt. Wants to know if they can still retire by 67.",
+      "persona_notes": "Age 45. $50K saved. Earns $140K/year. $22K student loans + $8K credit card debt. Catching up with max 401(k) + taxable savings. Willing to work longer.",
       "inputs": {
         "in_EndAge": 90,
         "in_RetirementTarget": 1800000,
@@ -94,7 +94,23 @@
         "in_VehicleCost": 35000,
         "in_VehicleInterval": 12,
         "in_FirstVehicleYear": 2028,
-        "in_StopDrivingAge": 80
+        "in_StopDrivingAge": 80,
+        "in_Debt1Enabled": "Yes",
+        "in_Debt1Label": "Student Loan",
+        "in_Debt1Category": "Student Loan",
+        "in_Debt1Balance": 22000,
+        "in_Debt1Rate": 0.055,
+        "in_Debt1MinPayment": 250,
+        "in_Debt1ExtraPayment": 0,
+        "in_Debt2Enabled": "Yes",
+        "in_Debt2Label": "Credit Card",
+        "in_Debt2Category": "Credit Card",
+        "in_Debt2Balance": 8000,
+        "in_Debt2Rate": 0.199,
+        "in_Debt2MinPayment": 200,
+        "in_Debt2ExtraPayment": 0,
+        "in_DebtPayoffStrategy": "avalanche",
+        "in_DebtExtraBudget": 150
       }
     },
     {

@@ -254,6 +254,87 @@ flexibility, allowing higher safe withdrawal rates (typically 5-5.5% vs 4%).
 
 st.divider()
 
+# ---------- Section: Debt & Liabilities ----------
+
+st.header("Debt & liabilities")
+
+st.subheader("APR (Annual Percentage Rate)")
+st.markdown(
+    """
+**In plain English:** the yearly interest rate your lender charges. A credit card
+at 20% APR means you owe about 1.67% of the remaining balance each month in
+interest. The higher the APR, the more expensive the debt.
+
+**Why it matters for retirement:** high-APR debt (credit cards, personal loans)
+eats into your savings faster than almost any investment can grow. A 20% credit
+card is effectively a -20% return on that money. Paying it off first is usually
+the highest-return "investment" available.
+    """
+)
+
+st.subheader("Amortization")
+st.markdown(
+    """
+**In plain English:** the process of paying off a loan with regular fixed
+payments over time. Each payment is split between **interest** (what you owe
+the lender) and **principal** (reducing what you actually owe). Early payments
+are mostly interest; later ones are mostly principal.
+
+**Our model:** walks 12 monthly payments per year for each debt, tracking the
+exact interest/principal split. When the balance reaches $0, payments stop —
+so expenses drop automatically.
+    """
+)
+
+st.subheader("Avalanche Method")
+st.markdown(
+    """
+**In plain English:** a debt payoff strategy. Pay **minimums on everything**,
+then throw all extra money at the debt with the **highest interest rate**. When
+that debt is paid off, its freed-up payment "cascades" to the next highest rate.
+
+**Why it's optimal:** saves the most total interest. Mathematically, this is
+always the cheapest way to eliminate debt.
+
+**Tradeoff:** the highest-rate debt might also be the largest, so the first
+victory can take a long time — which some people find discouraging.
+    """
+)
+
+st.subheader("Snowball Method")
+st.markdown(
+    """
+**In plain English:** like Avalanche, but you target the **smallest balance**
+first instead of the highest rate. You get a "win" (debt fully paid off) faster,
+which builds momentum.
+
+**Why people use it:** behavioral research shows snowball users are more likely
+to stick with the plan and finish paying off all debts, even though it costs
+slightly more in total interest.
+
+**Our model supports both.** Enable a payoff strategy in the sidebar under
+"Debts & Loans" to compare the impact on your retirement timeline.
+    """
+)
+
+st.subheader("Student Loan Interest Deduction")
+st.markdown(
+    """
+**In plain English:** the IRS lets you deduct up to **$2,500/year** of student
+loan interest from your taxable income (IRC §221). It's an "above-the-line"
+deduction — you get it whether or not you itemize.
+
+**Income phase-out:** begins at $80K MAGI single / $165K married filing jointly
+(2025). Our model applies the deduction without phase-out for simplicity.
+
+**Why it matters:** at a 22% marginal rate, a $2,500 deduction saves ~$550/year
+in federal tax. It's automatic in our model for any debt categorized as
+"Student Loan."
+    """
+)
+
+st.divider()
+
 # ---------- Section: Our app's specific terms ----------
 
 st.header("Terms specific to this app")
@@ -261,14 +342,14 @@ st.header("Terms specific to this app")
 st.subheader("Spendable NW vs Total NW")
 st.markdown(
     """
-**Spendable NW** = portfolio + liquid custom assets + Roth 401(k). Money you can
-actually pay bills with.
+**Spendable NW** = portfolio + liquid custom assets + Roth 401(k) − outstanding
+debt. Money you can actually pay bills with, net of obligations.
 
 **Total NW** = Spendable NW + home equity + illiquid custom assets. Includes
 everything, but some isn't available for spending without selling assets.
 
 We use **Spendable NW** for retirement triggers and plan viability. Home equity
-doesn't pay the grocery bill.
+doesn't pay the grocery bill, and outstanding debt reduces what's available.
     """
 )
 

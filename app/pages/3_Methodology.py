@@ -40,6 +40,36 @@ current age to a chosen end age. For each year it computes:
   inflation-adjusted expenses.
 - **Social Security** starting at your claim age, growing with COLA.
 - **Vehicle replacement** cycles during driving years.
+- **Debt payments** as mandatory living expenses that reduce savings (working)
+  and increase withdrawals (retired). Each debt amortizes monthly; when paid
+  off, expenses drop automatically.
+"""
+)
+
+st.header("Debt modeling")
+
+st.markdown(
+    """
+Up to three non-mortgage debts (credit card, student loan, auto loan, personal
+loan, medical debt, or custom). For each debt, the model:
+
+1. **Walks 12 monthly payments** per year — interest accrues on the remaining
+   balance, then the payment covers interest first and the remainder reduces
+   principal. Mid-year payoff is handled correctly (no overpayment).
+2. **Adds debt payments to living expenses.** During working years this reduces
+   net savings; during retirement it increases the grossed-up withdrawal.
+3. **Subtracts outstanding balances from Spendable NW** so debt delays the
+   retirement trigger realistically.
+4. **Student loan interest deduction** (IRC §221) — up to $2,500/year is
+   deducted above-the-line from taxable income. Other debt interest is not
+   deductible.
+5. **Payoff strategies** (optional):
+   - **Avalanche** — concentrates extra budget on the highest-rate debt first.
+     Mathematically optimal (minimizes total interest).
+   - **Snowball** — concentrates on the lowest-balance debt first. Faster
+     psychological wins.
+   - When a debt pays off, its freed-up minimum payment + extra budget
+     **cascades** to the next target automatically.
 """
 )
 
@@ -65,13 +95,14 @@ st.markdown(
     """
 - **All retirement income treated as ordinary income** for tax. Reality has
   LTCG differential and 0/50/85% SS taxability rules.
-- **No RMDs** at age 73 (would force taxable 401k withdrawals).
-- **No state income tax** (add separately if applicable).
 - **Fixed asset-class returns** in the deterministic projection. Monte Carlo
   varies them historically.
-- **No AMT, NIIT, QBI**, or other special tax provisions.
+- **No AMT, NIIT**, or other special tax provisions.
 - **Cash and crypto returns** held constant in Monte Carlo (no long
   historical series).
+- **Debt interest rates are fixed** — no variable-rate or refinancing modeling.
+- **Student loan interest deduction** ignores income phase-outs (applies full
+  deduction up to $2,500 regardless of MAGI).
 
 Net effect: the deterministic projection tends to be **slightly conservative**
 (overstates taxes), which is appropriate for planning.

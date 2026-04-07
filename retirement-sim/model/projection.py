@@ -18,6 +18,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 
 from .allocation import blended_401k_rate, bond_share
+from .debt import apply_debt_strategy
 from .expenses import annual_expenses, expense_breakdown
 from .income import (
     disability_annual_income,
@@ -100,6 +101,12 @@ class YearRecord:
     spouse_ss: float = 0.0
     spouse_k401: float = 0.0
     spouse_roth_401k: float = 0.0
+    # Debt
+    expense_debt: float = 0.0               # total debt payments this year
+    debt_1_balance: float = 0.0             # end-of-year balance
+    debt_2_balance: float = 0.0
+    debt_3_balance: float = 0.0
+    total_debt_balance: float = 0.0         # sum of all debt balances
 
 
 def _salary_for_year_schedule(year_idx: int, s, base_year: int = 2025) -> float:
@@ -212,6 +219,12 @@ def run_projection(seed: SeedCase) -> list[YearRecord]:
     ]
     custom_assets = [seed.custom_asset_1, seed.custom_asset_2, seed.custom_asset_3]
 
+    # Debt running balances (tracked outside the core waterfall, like custom assets)
+    debt_params = [seed.debt_1, seed.debt_2, seed.debt_3]
+    debt_balances = [
+        d.current_balance if d.enabled else 0.0 for d in debt_params
+    ]
+
     for year_idx in range(seed.years_simulated):
         year = seed.base_year + year_idx
         age = seed.current_age + year_idx
@@ -233,8 +246,8 @@ def run_projection(seed: SeedCase) -> list[YearRecord]:
                     [prev.custom_asset_1_balance, prev.custom_asset_2_balance, prev.custom_asset_3_balance],
                 ) if ca.enabled and ca.liquid
             )
-            # Spendable = core portfolio + liquid custom + Roth 401(k) (tax-free, spendable)
-            spendable_nw = prev.end_balance + liquid_custom + prev.roth_401k
+            # Spendable = core portfolio + liquid custom + Roth 401(k) - outstanding debt
+            spendable_nw = prev.end_balance + liquid_custom + prev.roth_401k - prev.total_debt_balance
             if spendable_nw >= seed.retirement.net_worth_target:
                 retired = True
         phase = "Retired" if retired else "Working"
@@ -305,7 +318,17 @@ def run_projection(seed: SeedCase) -> list[YearRecord]:
 
         # ----- Living expenses -----
         exp_breakdown = expense_breakdown(year, seed.expenses, seed.prop, seed.healthcare, age, seed.ltc)
-        expenses = exp_breakdown["total"]
+        # Debt payments are added to expenses (like mortgage P&I — fixed nominal
+        # outflows that need to be covered by salary or retirement withdrawal).
+        # When a payoff strategy is active (avalanche/snowball), extra budget
+        # concentrates on the priority target and cascades as debts pay off.
+        new_debt_balances, debt_payments_list, _ = apply_debt_strategy(
+            debt_params, debt_balances,
+            strategy=seed.debt_payoff_strategy,
+            extra_monthly_budget=seed.debt_extra_monthly_budget,
+        )
+        debt_payment_total = sum(debt_payments_list)
+        expenses = exp_breakdown["total"] + debt_payment_total
 
         # ----- Portfolio return -----
         if year_idx == 0:
@@ -366,6 +389,16 @@ def run_projection(seed: SeedCase) -> list[YearRecord]:
         # ----- Federal tax on working-year salary + SE income -----
         std_ded = seed.tax.std_deduction(year)
         effective_deduction = max(std_ded, mtg_interest)
+        # Student loan interest is an above-the-line deduction (reduces AGI),
+        # separate from std/itemized deduction. Capped at $2,500/year.
+        # Derive per-debt interest from strategy output: interest = payment - principal_reduction.
+        # This is accurate regardless of which payoff strategy is active.
+        sl_interest_total = 0.0
+        for i, d in enumerate(debt_params):
+            if d.enabled and d.category == "Student Loan" and debt_balances[i] > 0:
+                principal_reduction = debt_balances[i] - new_debt_balances[i]
+                sl_interest_total += max(0.0, debt_payments_list[i] - principal_reduction)
+        sl_interest_ded = min(sl_interest_total, 2_500.0)
         # Expense adjustment: reduce expenses after spouse death
         if sp.enabled and not spouse_alive:
             expenses = expenses * (1.0 - sp.expense_reduction_at_death)
@@ -377,7 +410,7 @@ def run_projection(seed: SeedCase) -> list[YearRecord]:
             total_k401_contrib = k401_contrib + sp_k401_contrib
             taxable_working = max(
                 total_salary + se_inc - total_trad_contrib - se_ded - qbi_ded - sep_contrib
-                + conversion_this_year - effective_deduction, 0.0
+                + conversion_this_year - effective_deduction - sl_interest_ded, 0.0
             )
             fed_tax_working = tax_on_taxable_income(taxable_working, year, seed.tax)
             state_tax_working = compute_state_tax(taxable_working, seed.tax.state)
@@ -568,7 +601,15 @@ def run_projection(seed: SeedCase) -> list[YearRecord]:
 
         custom_total = sum(custom_balances)
         spouse_total = sp_k401_running + sp_roth_running if sp.enabled else 0.0
-        total_nw = end_balance + prop_market_value - mtg_balance + custom_total + roth_401k_running + spouse_total
+        total_debt = sum(new_debt_balances)
+        total_nw = (
+            end_balance + prop_market_value - mtg_balance
+            + custom_total + roth_401k_running + spouse_total
+            - total_debt
+        )
+
+        # Advance debt running balances for next year
+        debt_balances = new_debt_balances
 
         records.append(YearRecord(
             year=year, age=age, phase=phase,
@@ -595,6 +636,11 @@ def run_projection(seed: SeedCase) -> list[YearRecord]:
             se_income=se_inc, se_tax=se_tax_yr, sep_ira_contrib=sep_contrib,
             spouse_salary=spouse_salary_yr, spouse_ss=spouse_ss_raw if spouse_alive else 0.0,
             spouse_k401=sp_k401_running, spouse_roth_401k=sp_roth_running,
+            expense_debt=debt_payment_total,
+            debt_1_balance=new_debt_balances[0],
+            debt_2_balance=new_debt_balances[1],
+            debt_3_balance=new_debt_balances[2],
+            total_debt_balance=total_debt,
         ))
 
         prev_buckets = buckets

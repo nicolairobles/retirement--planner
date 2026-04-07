@@ -19,7 +19,10 @@ class LifeEvent:
     category: str        # "retirement" | "income" | "milestone" | "outflow"
 
 
-def extract_events(records: list, end_age: int, k401_access_age: float = 59.5) -> list[LifeEvent]:
+def extract_events(
+    records: list, end_age: int, k401_access_age: float = 59.5,
+    debt_labels: tuple[str, str, str] = ("Debt 1", "Debt 2", "Debt 3"),
+) -> list[LifeEvent]:
     """Scan records for notable life events."""
     events: list[LifeEvent] = []
     prev_phase = None
@@ -27,6 +30,9 @@ def extract_events(records: list, end_age: int, k401_access_age: float = 59.5) -
     prev_disab = 0.0
     prev_other1 = 0.0
     prev_other2 = 0.0
+    prev_debt_1 = None  # will be set from first record
+    prev_debt_2 = None
+    prev_debt_3 = None
 
     for r in records:
         # Phase flip → retirement
@@ -117,11 +123,29 @@ def extract_events(records: list, end_age: int, k401_access_age: float = 59.5) -
                 category="outflow",
             ))
 
+        # Debt payoff events — fires when a debt balance drops to 0
+        for debt_attr, prev_val, debt_label in [
+            ("debt_1_balance", prev_debt_1, debt_labels[0]),
+            ("debt_2_balance", prev_debt_2, debt_labels[1]),
+            ("debt_3_balance", prev_debt_3, debt_labels[2]),
+        ]:
+            cur_bal = getattr(r, debt_attr, 0.0)
+            if prev_val is not None and prev_val > 0.01 and cur_bal <= 0.01:
+                events.append(LifeEvent(
+                    year=r.year, age=r.age,
+                    label=f"{debt_label} paid off",
+                    short_label=f"{debt_label} paid off",
+                    category="milestone",
+                ))
+
         prev_phase = r.phase
         prev_ss = r.ss_income
         prev_disab = r.disability_income
         prev_other1 = r.other_income_1
         prev_other2 = r.other_income_2
+        prev_debt_1 = getattr(r, "debt_1_balance", 0.0)
+        prev_debt_2 = getattr(r, "debt_2_balance", 0.0)
+        prev_debt_3 = getattr(r, "debt_3_balance", 0.0)
 
     return events
 
