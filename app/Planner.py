@@ -44,18 +44,21 @@ from helpers.widgets import money_input, percent_slider  # noqa: E402
 from model.debt import DEBT_CATEGORIES  # noqa: E402
 from model.outputs import run_and_extract  # noqa: E402
 from model.tax import STATE_TAX_PRESETS  # noqa: E402
+from helpers.chat_widget import render_chat_in_sidebar  # noqa: E402
+from helpers.analytics import track_page_view, track_button, track_feature_toggle  # noqa: E402
 
 # ---------- Page config ----------
 
 st.set_page_config(
     page_title="Retirement Planner",
     layout="wide",
-    initial_sidebar_state="expanded",
+    initial_sidebar_state="auto",  # auto-collapses on mobile
 )
 
 # Apply custom design (CSS + unified chart theme)
 inject_css()
 apply_altair_theme()
+track_page_view("planner")
 
 st.title("Retirement Planner")
 st.caption(
@@ -170,6 +173,7 @@ if "_load_template" in st.session_state:
     template_id = st.session_state.pop("_load_template")
     template = demo_case_map.get(template_id)
     if template:
+        track_button("template_loaded", template=template_id)
         st.session_state.inputs = dict(template["inputs"])
         st.session_state.current_age = PERSONA_AGES.get(template_id, 35)
         st.session_state.scenario_name = f"From {template['name'].split(' — ')[0]}"
@@ -219,10 +223,13 @@ if st.session_state.pop("_migrated_ownership", None) is not None:
         icon="🏠",
     )
 
-# ---------- Sidebar: scenario name + templates ----------
+# ---------- Sidebar: Chat + scenario name + templates ----------
 
 if st.session_state.pop("_just_restored", False):
     st.sidebar.success("Restored your last session.")
+
+# Chat assistant at top of sidebar
+render_chat_in_sidebar()
 
 # Scenario name — styled as prominent editable header
 st.sidebar.markdown(
@@ -284,6 +291,7 @@ with st.sidebar.expander("Personal", expanded=True):
         """on_click callback — runs BEFORE the script body on the next rerun.
         Finds the earliest safe retirement by checking BOTH deterministic
         survival and historical Monte Carlo success."""
+        track_button("find_safe_target_sidebar")
         result = find_safe_target(
             st.session_state.inputs, st.session_state.current_age,
         )
@@ -1179,6 +1187,7 @@ with st.sidebar.expander("Roth Conversion Ladder"):
 
 st.sidebar.divider()
 if st.sidebar.button("↺ Reset all saved data", type="secondary", key="clear_ls_btn"):
+    track_button("reset_all_data")
     st.session_state["_clear_saved"] = True
     st.rerun()
 st.sidebar.caption("Wipes your browser's saved scenario and reloads Alex defaults.")
@@ -1189,6 +1198,21 @@ current_age = st.session_state.current_age
 seed = build_seedcase_from_inputs(inputs, current_age=current_age)
 outputs = run_and_extract(seed)
 records = outputs.records
+
+# Track which features are active (once per session, after first model run)
+if "_features_tracked" not in st.session_state:
+    st.session_state["_features_tracked"] = True
+    from helpers.analytics import track_event
+    track_event("features_snapshot",
+        spouse=inputs.get("in_SpouseEnabled") == "Yes",
+        self_employment=inputs.get("in_SEEnabled") == "Yes",
+        property=inputs.get("in_BuyProperty") == "Yes",
+        healthcare=inputs.get("in_HealthcareEnabled") == "Yes",
+        ltc=inputs.get("in_LTCEnabled") == "Yes",
+        roth_conversion=inputs.get("in_RothConvEnabled") == "Yes",
+        vehicle=inputs.get("in_IncludeVehicle") == "Yes",
+        has_debts=any(inputs.get(f"in_Debt{n}Enabled") == "Yes" for n in (1, 2, 3)),
+    )
 
 # ---------- Auto-save to localStorage (silent) ----------
 # Runs on every interaction; persists current inputs to browser storage.

@@ -184,6 +184,22 @@ def inject_css() -> None:
             color: #475569;
             margin-top: 2rem;
         }
+
+        /* ---------- Mobile responsive ---------- */
+        @media (max-width: 768px) {
+            .main .block-container {
+                padding-top: 1rem;
+                padding-bottom: 2rem;
+                padding-left: 0.5rem;
+                padding-right: 0.5rem;
+            }
+            h1 { font-size: 1.5rem; }
+            h2 { font-size: 1.25rem; margin-top: 1rem; }
+            h3 { font-size: 1rem; }
+            .hero-card { padding: 0.75rem 1rem; }
+            [data-testid="stMetric"] { padding: 0.75rem 0.875rem; }
+            [data-testid="stMetricValue"] { font-size: 1.25rem !important; }
+        }
         </style>
         """,
         unsafe_allow_html=True,

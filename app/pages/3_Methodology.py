@@ -11,10 +11,15 @@ APP_ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(APP_ROOT))
 
 from helpers.theme import apply_altair_theme, inject_css  # noqa: E402
+from helpers.chat_widget import render_chat_in_sidebar  # noqa: E402
+from helpers.analytics import track_page_view  # noqa: E402
 
 st.set_page_config(page_title="Methodology", layout="wide")
 inject_css()
 apply_altair_theme()
+
+render_chat_in_sidebar()
+track_page_view("methodology")
 st.title("Methodology & Disclaimer")
 
 st.header("What this tool does")

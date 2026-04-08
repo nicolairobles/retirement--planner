@@ -21,10 +21,15 @@ from helpers.scenario_card import render_scenario_card_v2  # noqa: E402
 from helpers.seeds import build_seedcase_from_inputs  # noqa: E402
 from helpers.theme import apply_altair_theme, inject_css  # noqa: E402
 from model.outputs import run_and_extract  # noqa: E402
+from helpers.chat_widget import render_chat_in_sidebar  # noqa: E402
+from helpers.analytics import track_page_view  # noqa: E402
 
 st.set_page_config(page_title="Sensitivity", layout="wide")
 inject_css()
 apply_altair_theme()
+
+render_chat_in_sidebar()
+track_page_view("sensitivity")
 
 st.title("Sensitivity Analysis")
 
