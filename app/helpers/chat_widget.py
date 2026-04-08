@@ -560,6 +560,25 @@ def render_chat_in_sidebar():
     </style>
     """, unsafe_allow_html=True)
 
+    # Determine if chat can send (needed before rendering messages for onboarding buttons)
+    can_send = True
+    warning_msg = None
+    session_count = st.session_state.get("_chat_session_count", 0)
+
+    if not api_key:
+        provider = settings.get("provider", DEFAULT_PROVIDER)
+        if provider == "ollama":
+            warning_msg = "Can't reach Ollama — is it running?"
+        else:
+            warning_msg = "Add an API key in settings below to get started"
+        can_send = False
+    elif tier == "free" and session_count >= SESSION_MESSAGE_LIMIT:
+        warning_msg = "Session limit reached — refresh or add your own key"
+        can_send = False
+    elif tier == "free" and is_free_tier_exhausted():
+        warning_msg = "Daily limit reached — add your own key for unlimited"
+        can_send = False
+
     # Header with clear button
     header_col1, header_col2 = st.sidebar.columns([5, 1])
     with header_col1:
@@ -631,27 +650,8 @@ def render_chat_in_sidebar():
                 height=0,
             )
 
-    # Check if can send
-    can_send = True
-    warning_msg = None
-    session_count = st.session_state.get("_chat_session_count", 0)
-
-    if not api_key:
-        provider = settings.get("provider", DEFAULT_PROVIDER)
-        if provider == "ollama":
-            warning_msg = "⚠️ Can't reach Ollama — is it running?"
-        else:
-            warning_msg = "⚠️ Add an API key in settings below to get started"
-        can_send = False
-    elif tier == "free" and session_count >= SESSION_MESSAGE_LIMIT:
-        warning_msg = "⚠️ Session limit reached — refresh or add your own key"
-        can_send = False
-    elif tier == "free" and is_free_tier_exhausted():
-        warning_msg = "⚠️ Daily limit reached — add your own key for unlimited"
-        can_send = False
-
     if warning_msg:
-        st.sidebar.caption(warning_msg)
+        st.sidebar.caption(f"⚠️ {warning_msg}")
 
     # Chat input
     prompt = st.sidebar.chat_input(
