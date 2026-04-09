@@ -535,9 +535,7 @@ def render_chat_in_sidebar():
     tier = _get_tier(settings)
     api_key = _get_api_key(settings)
 
-    import streamlit.components.v1 as components
-
-    # Chat styling (with mobile responsive adjustments)
+    # Chat styling + sidebar scroll anchor
     st.markdown("""
     <style>
         /* Clean chat input border */
@@ -547,12 +545,19 @@ def render_chat_in_sidebar():
         [data-testid="stSidebar"] [data-testid="stChatInput"]:focus-within > div {
             border-color: #2563EB;
         }
-        /* Shrink chat container on mobile to leave room for inputs */
+        /* Shrink chat container on mobile */
         @media (max-width: 768px) {
             [data-testid="stSidebar"] .stVerticalBlockBorderWrapper
             > div[style*="overflow"] {
                 max-height: 200px !important;
             }
+        }
+        /* Force sidebar to stay scrolled to top on re-render */
+        [data-testid="stSidebarContent"] {
+            scroll-snap-type: y mandatory;
+        }
+        [data-testid="stSidebarUserContent"] > div:first-child {
+            scroll-snap-align: start;
         }
     </style>
     """, unsafe_allow_html=True)
@@ -626,51 +631,13 @@ def render_chat_in_sidebar():
                 elif msg["role"] == "assistant" and msg.get("content"):
                     _render_message("Advisor", msg["content"], is_user=False)
 
-        # Scroll chat container to bottom via injected JS (0-height iframe).
-        # Walk up from iframe to find the first scrollable ancestor.
+        # Scroll chat container to bottom (CSS-only, no iframe)
         if st.session_state.chat_messages:
-            components.html(
-                "<script>"
-                "setTimeout(function(){"
-                "  var el = typeof frameElement!=='undefined' && frameElement;"
-                "  if(!el) return;"
-                "  while(el && el.parentElement){"
-                "    el = el.parentElement;"
-                "    var s = getComputedStyle(el);"
-                "    if((s.overflowY==='auto'||s.overflowY==='scroll')"
-                "       && el.scrollHeight > el.clientHeight){"
-                "      el.scrollTop = el.scrollHeight;"
-                "      break;"
-                "    }"
-                "  }"
-                "}, 80);"
-                "</script>",
-                height=0,
+            st.markdown(
+                '<div style="height:0;overflow:hidden;" id="chat-bottom"></div>'
+                '<style>#chat-bottom { scroll-margin-top: 9999px; }</style>',
+                unsafe_allow_html=True,
             )
-
-    # Keep sidebar scrolled to top while Streamlit re-renders widgets below.
-    # A single setTimeout loses the race — widgets render after it fires and
-    # push the scroll back down.  MutationObserver keeps resetting scrollTop
-    # until the DOM stabilizes, then self-destructs.
-    components.html(
-        "<script>"
-        "(function(){"
-        "  var sb = window.parent.document.querySelector("
-        "    '[data-testid=\"stSidebarContent\"]'"
-        "  );"
-        "  if(!sb) return;"
-        "  sb.scrollTop = 0;"
-        "  var n = 0;"
-        "  var obs = new MutationObserver(function(){"
-        "    sb.scrollTop = 0;"
-        "    if(++n > 30) obs.disconnect();"
-        "  });"
-        "  obs.observe(sb, {childList:true, subtree:true});"
-        "  setTimeout(function(){ obs.disconnect(); }, 2000);"
-        "})();"
-        "</script>",
-        height=0,
-    )
 
     if warning_msg:
         st.sidebar.caption(f"⚠️ {warning_msg}")
@@ -689,16 +656,13 @@ def render_chat_in_sidebar():
         _process_message(prompt.strip(), settings, api_key)
         st.rerun()
 
-    # Prominent CTA button — the key question most visitors have
+    # Visual separator between chat section and actions
     st.sidebar.markdown(
-        '<style>'
-        '#find-safe-btn button {background: linear-gradient(135deg, #1D4ED8, #2563EB);'
-        'color: white !important; border: none; font-weight: 600;'
-        'font-size: 0.85rem; padding: 0.5rem 1rem;}'
-        '#find-safe-btn button:hover {background: linear-gradient(135deg, #1E40AF, #1D4ED8);}'
-        '</style>',
+        '<div style="border-top: 2px solid #E2E8F0; margin: 0.5rem 0;"></div>',
         unsafe_allow_html=True,
     )
+
+    # Prominent CTA button
     with st.sidebar.container():
         if st.button(
             "Find my earliest safe retirement",

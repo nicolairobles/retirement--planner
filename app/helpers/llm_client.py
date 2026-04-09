@@ -377,17 +377,14 @@ def chat_completion(
                                 if tc.function.arguments:
                                     current_tool_call["function"]["arguments"] += tc.function.arguments
 
-            # Yield tool calls if any were collected (use yield, not return, so it's captured)
+            # Yield tool calls as a dict (content was already yielded as chunks above).
+            # Only yield a final dict for tool calls — text-only responses were
+            # already streamed chunk-by-chunk, so no need to yield them again.
             if collected_tool_calls and any(tc["id"] for tc in collected_tool_calls):
                 yield {
                     "role": "assistant",
                     "content": collected_content or None,
                     "tool_calls": collected_tool_calls,
-                }
-            elif collected_content:
-                yield {
-                    "role": "assistant",
-                    "content": collected_content,
                 }
 
         else:

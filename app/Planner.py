@@ -52,7 +52,7 @@ from helpers.analytics import track_page_view, track_button, track_feature_toggl
 st.set_page_config(
     page_title="Retirement Planner",
     layout="wide",
-    initial_sidebar_state="auto",  # auto-collapses on mobile
+    initial_sidebar_state="expanded",
 )
 
 # Apply custom design (CSS + unified chart theme)
