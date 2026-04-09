@@ -276,7 +276,10 @@ def _handle_tool_calls(
             "content": format_tool_result(result),
         })
 
-    # Stream the final response after tool execution (pure text, no tools)
+    # Get final response after tool execution (pure text, no tools).
+    # IMPORTANT: Only collect from ONE yield type to prevent duplication.
+    # String chunks are the primary path; ignore dicts entirely here
+    # since text was already yielded as strings.
     final_response = ""
     try:
         for chunk in chat_completion(
@@ -290,8 +293,6 @@ def _handle_tool_calls(
         ):
             if isinstance(chunk, str):
                 final_response += chunk
-            elif isinstance(chunk, dict) and chunk.get("content"):
-                final_response += chunk["content"]
     except Exception as e:
         logger.error(f"Error getting final response: {e}")
         final_response = f"I encountered an error processing the tool results: {str(e)}"
@@ -442,8 +443,6 @@ def _process_message(prompt: str, settings: dict, api_key: str) -> str | None:
             ):
                 if isinstance(chunk, str):
                     response_text += chunk
-                elif isinstance(chunk, dict) and chunk.get("content"):
-                    response_text += chunk["content"]
         except Exception as e:
             logger.error(f"Retry also failed: {e}")
             _track_event("error", error=f"retry_failed: {e}")
