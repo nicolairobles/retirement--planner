@@ -551,13 +551,6 @@ def render_chat_in_sidebar():
                 max-height: 200px !important;
             }
         }
-        /* Force sidebar to stay scrolled to top on re-render */
-        [data-testid="stSidebarContent"] {
-            scroll-snap-type: y mandatory;
-        }
-        [data-testid="stSidebarUserContent"] > div:first-child {
-            scroll-snap-align: start;
-        }
     </style>
     """, unsafe_allow_html=True)
 
