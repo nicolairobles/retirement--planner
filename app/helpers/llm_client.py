@@ -21,7 +21,7 @@ Provider = Literal["groq", "openai", "ollama", "gemini"]
 # Gemini: 1,000 req/day free tier - best for small apps
 # Groq: 14,400 req/day but 30 RPM limit causes issues with concurrent users
 DEFAULT_MODELS = {
-    "gemini": "gemini-2.5-flash-lite",  # Free tier, fast, good tool calling
+    "gemini": "gemini-2.5-flash",  # Free tier, better reasoning than lite
     "groq": "llama-3.3-70b-versatile",
     "openai": "gpt-4o-mini",
     "ollama": "qwen2.5:7b",  # Qwen has best tool calling accuracy for local models

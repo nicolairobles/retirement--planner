@@ -23,7 +23,7 @@ from .llm_client import (
 # Available models per provider (keep default first in each list)
 AVAILABLE_MODELS = {
     "groq": ["llama-3.3-70b-versatile", "llama-3.1-8b-instant", "qwen/qwen3-32b"],
-    "gemini": ["gemini-2.5-flash-lite", "gemini-2.5-flash", "gemini-2.5-pro"],
+    "gemini": ["gemini-2.5-flash", "gemini-2.5-flash-lite", "gemini-2.5-pro"],
     "openai": ["gpt-4o-mini", "gpt-4o"],
     "ollama": ["qwen2.5:7b", "llama3.2", "llama3.1", "mistral"],
 }
