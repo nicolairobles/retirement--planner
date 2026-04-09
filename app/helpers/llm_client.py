@@ -377,13 +377,13 @@ def chat_completion(
                                 if tc.function.arguments:
                                     current_tool_call["function"]["arguments"] += tc.function.arguments
 
-            # Yield tool calls as a dict (content was already yielded as chunks above).
-            # Only yield a final dict for tool calls — text-only responses were
-            # already streamed chunk-by-chunk, so no need to yield them again.
+            # Tool calls: yield as a dict (DON'T include content — it was
+            # already yielded as string chunks above, so including it would
+            # cause the consumer to see the text twice).
             if collected_tool_calls and any(tc["id"] for tc in collected_tool_calls):
                 yield {
                     "role": "assistant",
-                    "content": collected_content or None,
+                    "content": None,
                     "tool_calls": collected_tool_calls,
                 }
 
@@ -392,12 +392,9 @@ def chat_completion(
             response = client.chat.completions.create(**kwargs)
             message = response.choices[0].message
 
-            # Yield content first if present
-            if message.content:
-                yield message.content
-
-            # Yield tool calls or final message dict
             if hasattr(message, "tool_calls") and message.tool_calls:
+                # Tool calls: yield ONLY the dict (content goes in the dict
+                # so _handle_tool_calls can forward it to the next API call).
                 yield {
                     "role": "assistant",
                     "content": message.content,
@@ -413,8 +410,11 @@ def chat_completion(
                         for tc in message.tool_calls
                     ],
                 }
-            elif not message.content:
-                # No content and no tool calls - yield empty response indicator
+            elif message.content:
+                # Text only: yield as string (not a dict) — single path,
+                # no duplication.
+                yield message.content
+            else:
                 yield {"role": "assistant", "content": None}
 
     except Exception as e:
