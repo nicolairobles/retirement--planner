@@ -607,14 +607,16 @@ def render_chat_in_sidebar():
                     onboard_prompt = "Help me set up my retirement plan. Ask me one question at a time, starting with the basics."
                     st.session_state.chat_messages.append({"role": "user", "content": onboard_prompt})
                     save_chat_history(st.session_state.chat_messages)
-                    _process_message(onboard_prompt, settings, api_key)
+                    with st.status("Thinking...", expanded=False):
+                        _process_message(onboard_prompt, settings, api_key)
                     st.rerun()
                 if st.button("Review my current plan", key="onboard_review", use_container_width=True):
                     _track_event("button_click", button="onboard_review")
                     review_prompt = "Review my current retirement plan and tell me how it looks."
                     st.session_state.chat_messages.append({"role": "user", "content": review_prompt})
                     save_chat_history(st.session_state.chat_messages)
-                    _process_message(review_prompt, settings, api_key)
+                    with st.status("Thinking...", expanded=False):
+                        _process_message(review_prompt, settings, api_key)
                     st.rerun()
         else:
             for msg in st.session_state.chat_messages:
@@ -641,11 +643,12 @@ def render_chat_in_sidebar():
         key="sidebar_chat_input",
     )
 
-    # Single-phase: process immediately, then rerun once to show response
+    # Process message with visible spinner so user knows it's working
     if prompt and prompt.strip():
         st.session_state.chat_messages.append({"role": "user", "content": prompt.strip()})
         save_chat_history(st.session_state.chat_messages)
-        _process_message(prompt.strip(), settings, api_key)
+        with st.sidebar.status("Thinking...", expanded=False):
+            _process_message(prompt.strip(), settings, api_key)
         st.rerun()
 
     # Visual separator between chat section and actions
