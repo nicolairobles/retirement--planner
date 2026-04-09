@@ -450,7 +450,9 @@ def _process_message(prompt: str, settings: dict, api_key: str) -> str | None:
             _track_event("error", error=f"retry_failed: {e}")
             response_text = f"Sorry, I'm having trouble connecting to {provider}. Please try again."
 
-    # Save assistant response
+    # Clean up repetition artifacts from LLM output, then save
+    if response_text:
+        response_text = _dedup_sentences(response_text)
     if response_text:
         st.session_state.chat_messages.append({"role": "assistant", "content": response_text})
         save_chat_history(st.session_state.chat_messages)
@@ -462,6 +464,23 @@ def _process_message(prompt: str, settings: dict, api_key: str) -> str | None:
         save_chat_history(st.session_state.chat_messages)
         _track_event("error", error="empty_response")
         return error_msg
+
+
+def _dedup_sentences(text: str) -> str:
+    """Remove consecutively repeated sentences/phrases from LLM output."""
+    import re
+    # Normalize: ensure space after sentence-ending punctuation (Gemini
+    # sometimes concatenates like "age?What is your")
+    text = re.sub(r'([.!?])([A-Z])', r'\1 \2', text)
+    # Split on sentence boundaries
+    parts = re.split(r'(?<=[.!?])\s+', text)
+    if len(parts) <= 1:
+        return text
+    deduped = [parts[0]]
+    for part in parts[1:]:
+        if part != deduped[-1]:
+            deduped.append(part)
+    return " ".join(deduped)
 
 
 def _md_to_html(text: str) -> str:
@@ -627,15 +646,26 @@ def render_chat_in_sidebar():
                 height=0,
             )
 
-    # Scroll sidebar to top so chat is visible after reruns
+    # Keep sidebar scrolled to top while Streamlit re-renders widgets below.
+    # A single setTimeout loses the race — widgets render after it fires and
+    # push the scroll back down.  MutationObserver keeps resetting scrollTop
+    # until the DOM stabilizes, then self-destructs.
     components.html(
         "<script>"
-        "setTimeout(function(){"
+        "(function(){"
         "  var sb = window.parent.document.querySelector("
-        "    '[data-testid=\"stSidebar\"] [data-testid=\"stSidebarContent\"]'"
+        "    '[data-testid=\"stSidebarContent\"]'"
         "  );"
-        "  if(sb) sb.scrollTop = 0;"
-        "}, 120);"
+        "  if(!sb) return;"
+        "  sb.scrollTop = 0;"
+        "  var n = 0;"
+        "  var obs = new MutationObserver(function(){"
+        "    sb.scrollTop = 0;"
+        "    if(++n > 30) obs.disconnect();"
+        "  });"
+        "  obs.observe(sb, {childList:true, subtree:true});"
+        "  setTimeout(function(){ obs.disconnect(); }, 2000);"
+        "})();"
         "</script>",
         height=0,
     )

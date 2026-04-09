@@ -325,7 +325,12 @@ def chat_completion(
         "model": model,
         "messages": messages,
         "stream": stream,
+        "temperature": 0.7,
     }
+
+    # Reduce repetition (Gemini doesn't support frequency_penalty)
+    if provider in ("openai", "groq"):
+        kwargs["frequency_penalty"] = 0.3
 
     # Add tools if provided (all providers support OpenAI-compatible tool calling)
     if tools:
