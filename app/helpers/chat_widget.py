@@ -46,7 +46,6 @@ API_KEY_HELP = {
 # Default provider — Gemini free tier is generous and doesn't require billing
 DEFAULT_PROVIDER = "gemini"
 from .local_storage import (
-    FREE_TIER_DAILY_LIMIT,
     load_chat_history,
     save_chat_history,
     clear_chat_history,
@@ -353,7 +352,7 @@ def _trim_messages_for_context(messages: list[dict]) -> list[dict]:
 
 # --------------- Analytics tracking ---------------
 
-from .analytics import track_event as _track_event, get_analytics_summary  # noqa: E402
+from .analytics import track_event as _track_event  # noqa: E402
 
 
 # --------------- Message processing ---------------
@@ -392,7 +391,7 @@ def _process_message(prompt: str, settings: dict, api_key: str) -> str | None:
     _track_event("message", provider=provider, model=model, role="user")
 
     try:
-        # Use streaming for the initial request (non-tool path)
+        # Non-streaming for tool parsing; post-tool follow-up uses streaming
         for chunk in chat_completion(
             messages=api_messages,
             provider=provider,
@@ -467,20 +466,22 @@ def _process_message(prompt: str, settings: dict, api_key: str) -> str | None:
 
 
 def _dedup_sentences(text: str) -> str:
-    """Remove consecutively repeated sentences/phrases from LLM output."""
+    """Remove consecutively repeated sentences from LLM output.
+
+    Conservative approach: only catches exact consecutive duplicate chunks
+    of 5+ words.  Does NOT try to normalize punctuation, so abbreviations
+    like 'U.S.' or 'Dr. Smith' are never mangled.
+    """
     import re
-    # Normalize: ensure space after sentence-ending punctuation (Gemini
-    # sometimes concatenates like "age?What is your")
-    text = re.sub(r'([.!?])([A-Z])', r'\1 \2', text)
-    # Split on sentence boundaries
-    parts = re.split(r'(?<=[.!?])\s+', text)
-    if len(parts) <= 1:
-        return text
-    deduped = [parts[0]]
-    for part in parts[1:]:
-        if part != deduped[-1]:
-            deduped.append(part)
-    return " ".join(deduped)
+    # Match a sentence-like chunk (5+ words ending in punctuation) that is
+    # immediately repeated — with or without whitespace between copies.
+    # The backreference \\1 catches exact duplicates.
+    text = re.sub(
+        r'((?:\S+\s+){4,}\S+[.!?])\s*\1',
+        r'\1',
+        text,
+    )
+    return text
 
 
 def _md_to_html(text: str) -> str:
@@ -631,7 +632,8 @@ def render_chat_in_sidebar():
             components.html(
                 "<script>"
                 "setTimeout(function(){"
-                "  var el = frameElement;"
+                "  var el = typeof frameElement!=='undefined' && frameElement;"
+                "  if(!el) return;"
                 "  while(el && el.parentElement){"
                 "    el = el.parentElement;"
                 "    var s = getComputedStyle(el);"

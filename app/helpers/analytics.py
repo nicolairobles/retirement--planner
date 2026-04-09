@@ -34,12 +34,26 @@ def _get_session_id() -> str:
     return st.session_state["_analytics_session_id"]
 
 
+_MAX_LOG_BYTES = 5 * 1024 * 1024  # 5 MB — rotate when exceeded
+
+
 def _write_to_log(record: dict) -> None:
-    """Append a single JSON record to the log file (fire-and-forget)."""
+    """Append a single JSON record to the log file (fire-and-forget).
+
+    Rotates the log when it exceeds _MAX_LOG_BYTES by keeping the most
+    recent half of the file.
+    """
     try:
         _LOG_DIR.mkdir(exist_ok=True)
         with open(_LOG_FILE, "a", encoding="utf-8") as f:
             f.write(json.dumps(record, default=str) + "\n")
+
+        # Rotate if too large
+        if _LOG_FILE.stat().st_size > _MAX_LOG_BYTES:
+            lines = _LOG_FILE.read_text(encoding="utf-8").splitlines()
+            # Keep the newest half
+            keep = lines[len(lines) // 2 :]
+            _LOG_FILE.write_text("\n".join(keep) + "\n", encoding="utf-8")
     except Exception:
         # Never let analytics break the app
         logger.debug("Failed to write analytics event", exc_info=True)
