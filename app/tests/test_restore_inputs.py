@@ -117,5 +117,58 @@ class RestoreInputsTests(unittest.TestCase):
         self.assertEqual(self.fake_state["scenario_name"], "My scenario")
 
 
+class SetInputNoSessionTests(unittest.TestCase):
+    """Guards against the data-loss footgun in chat_tools.set_input.
+
+    Old behavior: if st.session_state had no 'inputs' key, set_input
+    silently created an empty dict. That clobbered any template still
+    sitting in localStorage. New behavior: attempt to restore from
+    localStorage first, and return an error if still missing.
+    """
+
+    def setUp(self):
+        self.fake_state = FakeSessionState()
+        self.tools_state_patch = patch(
+            "helpers.chat_tools.st.session_state", self.fake_state
+        )
+        self.local_storage_state_patch = patch(
+            "helpers.local_storage.st.session_state", self.fake_state
+        )
+        self.tools_state_patch.start()
+        self.local_storage_state_patch.start()
+
+    def tearDown(self):
+        self.tools_state_patch.stop()
+        self.local_storage_state_patch.stop()
+
+    def test_set_input_restores_from_localstorage_when_session_empty(self):
+        from helpers.chat_tools import set_input
+
+        payload = {
+            "name": "Saved",
+            "current_age": 40,
+            "inputs": {"in_MonthlyNonHousing": 3000, "in_EndAge": 95},
+        }
+        with patch(
+            "helpers.local_storage.load_from_localstorage", return_value=payload
+        ):
+            result = set_input("monthly_spending", 4500)
+
+        self.assertTrue(result.get("success"), msg=result)
+        self.assertEqual(self.fake_state["inputs"]["in_MonthlyNonHousing"], 4500)
+        self.assertEqual(self.fake_state["inputs"]["in_EndAge"], 95)
+
+    def test_set_input_errors_gracefully_when_no_scenario_anywhere(self):
+        from helpers.chat_tools import set_input
+
+        with patch(
+            "helpers.local_storage.load_from_localstorage", return_value=None
+        ):
+            result = set_input("monthly_spending", 4500)
+
+        self.assertIn("error", result)
+        self.assertNotIn("inputs", self.fake_state)
+
+
 if __name__ == "__main__":
     unittest.main()

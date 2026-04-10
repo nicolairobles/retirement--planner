@@ -431,9 +431,16 @@ def set_input(field: str, value: float | int | str) -> dict:
             "message": f"Set {description} to {typed_value}",
         }
 
-    # Set in inputs dict
+    # Set in inputs dict. If inputs is missing, try to restore from localStorage
+    # before giving up — never silently create an empty dict, which would clobber
+    # any saved scenario sitting in the browser.
     if "inputs" not in st.session_state:
-        st.session_state.inputs = {}
+        from .local_storage import restore_inputs_from_localstorage
+        restore_inputs_from_localstorage()
+    if "inputs" not in st.session_state:
+        return {
+            "error": "No scenario loaded. Please set up your inputs on the Planner page first.",
+        }
 
     st.session_state.inputs[input_key] = typed_value
 

@@ -674,6 +674,21 @@ def render_chat_in_sidebar():
             from .widgets import format_money
 
             _track_event("button_click", button="find_safe_target_chat")
+
+            # Bail early if no scenario is loaded — otherwise the target
+            # finder runs with empty inputs and the write on line ~700 crashes.
+            if "inputs" not in st.session_state or not st.session_state.inputs:
+                st.session_state.chat_messages.append({
+                    "role": "assistant",
+                    "content": (
+                        "I don't see a scenario yet. Open the **Planner** page "
+                        "to set up your inputs, then come back and I'll find "
+                        "your earliest safe retirement."
+                    ),
+                })
+                save_chat_history(st.session_state.chat_messages)
+                st.rerun()
+
             with st.spinner("Running stress tests..."):
                 result = _chat_find_safe_target()
 
