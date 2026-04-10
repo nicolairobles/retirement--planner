@@ -45,6 +45,24 @@ def load_from_localstorage() -> dict | None:
         return None
 
 
+def restore_inputs_from_localstorage() -> bool:
+    """Restore scenario from localStorage into st.session_state if missing.
+
+    Used by every page that reads st.session_state.inputs, so users can
+    reload or deep-link to Monte Carlo / Sensitivity without first bouncing
+    through the Planner page. Returns True if a scenario was restored.
+    """
+    if "inputs" in st.session_state:
+        return False
+    ls_data = load_from_localstorage()
+    if not ls_data or not ls_data.get("inputs"):
+        return False
+    st.session_state.inputs = dict(ls_data["inputs"])
+    st.session_state.current_age = int(ls_data.get("current_age", 35))
+    st.session_state.scenario_name = ls_data.get("name", "My scenario")
+    return True
+
+
 def save_to_localstorage(inputs: dict, current_age: int, name: str = "Current scenario") -> None:
     """Write the scenario to browser localStorage (silent, fire-and-forget)."""
     payload = {"name": name, "current_age": int(current_age), "inputs": inputs}

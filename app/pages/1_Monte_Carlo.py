@@ -17,6 +17,7 @@ sys.path.insert(0, str(APP_ROOT))
 
 from helpers.cache_keys import inputs_cache_key  # noqa: E402
 from helpers.charts import mc_cycles_strip_chart, monte_carlo_distribution_chart  # noqa: E402
+from helpers.local_storage import restore_inputs_from_localstorage  # noqa: E402
 from helpers.scenario_card import render_scenario_card_v2  # noqa: E402
 from helpers.seeds import build_seedcase_from_inputs  # noqa: E402
 from helpers.theme import apply_altair_theme, inject_css  # noqa: E402
@@ -28,6 +29,10 @@ from helpers.analytics import track_page_view  # noqa: E402
 st.set_page_config(page_title="Monte Carlo", layout="wide")
 inject_css()
 apply_altair_theme()
+
+# Restore scenario from browser localStorage before anything else reads it —
+# the chat sidebar mutates st.session_state.inputs, so restore must run first.
+restore_inputs_from_localstorage()
 
 render_chat_in_sidebar()
 track_page_view("monte_carlo")

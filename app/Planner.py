@@ -31,7 +31,7 @@ from helpers.charts import (  # noqa: E402
 from helpers.events import extract_events, events_by_year  # noqa: E402
 from helpers.local_storage import (  # noqa: E402
     clear_localstorage,
-    load_from_localstorage,
+    restore_inputs_from_localstorage,
     save_to_localstorage,
 )
 from helpers.housing_comparison import compare_rent_vs_buy  # noqa: E402
@@ -153,20 +153,14 @@ def _clear_widget_keys():
     st.session_state.pop("_target_finder_result", None)
 
 # One-time init: restore from localStorage or fall back to default template
-if "inputs" not in st.session_state:
-    # Try to restore from browser localStorage
-    ls_data = load_from_localstorage()
-    if ls_data and ls_data.get("inputs"):
-        st.session_state.inputs = dict(ls_data["inputs"])
-        st.session_state.current_age = int(ls_data.get("current_age", 35))
-        st.session_state.scenario_name = ls_data.get("name", "My scenario")
-        st.session_state._just_restored = True
-    else:
-        # Default to Alex template on first-ever load
-        default_case = demo_case_map["alex-mid-career"]
-        st.session_state.inputs = dict(default_case["inputs"])
-        st.session_state.current_age = PERSONA_AGES["alex-mid-career"]
-        st.session_state.scenario_name = "My scenario"
+if restore_inputs_from_localstorage():
+    st.session_state._just_restored = True
+elif "inputs" not in st.session_state:
+    # Default to Alex template on first-ever load
+    default_case = demo_case_map["alex-mid-career"]
+    st.session_state.inputs = dict(default_case["inputs"])
+    st.session_state.current_age = PERSONA_AGES["alex-mid-career"]
+    st.session_state.scenario_name = "My scenario"
 
 # Handle template-load button clicks (fire from buttons below)
 if "_load_template" in st.session_state:
